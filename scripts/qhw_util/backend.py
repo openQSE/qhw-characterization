@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any
 import os
 import time
@@ -41,6 +42,34 @@ def normalize_qubit_mapping(mapping):
 	else:
 		raise TypeError("qubit mapping must be a dict, list, or tuple")
 	return normalized or None
+
+
+def _direct_provider_module_name(provider: str) -> str:
+	name = str(provider or "").strip().lower().replace("-", "_")
+	if not name:
+		raise RuntimeError("direct provider name cannot be empty")
+	if not name.replace("_", "").isalnum():
+		raise RuntimeError(f"invalid direct provider name {provider!r}")
+	return f"qhw_util.{name}.backend"
+
+
+def create_direct_backend(provider: str):
+	module_name = _direct_provider_module_name(provider)
+	try:
+		module = import_module(module_name)
+	except ModuleNotFoundError as exc:
+		if exc.name == module_name or module_name.startswith(f"{exc.name}."):
+			raise RuntimeError(
+				f"unsupported direct provider {provider!r}; expected "
+				f"{module_name}.create_backend()") from exc
+		raise
+
+	factory = getattr(module, "create_backend", None)
+	if factory is None:
+		raise RuntimeError(
+			f"direct provider {provider!r} does not define "
+			f"{module_name}.create_backend()")
+	return factory()
 
 
 @dataclass
@@ -174,12 +203,7 @@ def get_backend(mode: str = "auto", system_up_timeout: int = 40,
 			qfw_capabilities=qfw_capabilities))
 
 	if mode == "auto" or mode == "direct":
-		if provider != "iqm":
-			raise RuntimeError(
-				f"unsupported direct provider {provider!r}; only iqm "
-				"is implemented")
-		from qhw_util.iqm.backend import DirectIQMBackend
-		return BackendWrapper(DirectIQMBackend())
+		return BackendWrapper(create_direct_backend(provider))
 
 	raise RuntimeError(f"unsupported backend mode {mode!r}")
 

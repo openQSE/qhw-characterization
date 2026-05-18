@@ -306,6 +306,34 @@ Device, calibration, and coupling calls return normalized `qhw-data` schema
 records in both direct and QFw mode. Qiskit-authored workflows use
 `backend.run(...).result(...)`.
 
+### Backend Profile Contract
+
+A backend profile is the provider-specific object wrapped by
+`BackendWrapper`. A direct provider or QFw profile must implement:
+
+- `name`: short backend label used in output records.
+- `qiskit_backend(calibration_set_id=None)`: return a Qiskit `BackendV2`.
+- `extract_result_and_normalize(job, result, record, context)`: attach a
+  normalized `qhw-result-v1` payload under `record["result"]["qhw_result"]`.
+- `finish(rc=0)`: clean up provider or QFw runtime state and return an exit
+  code.
+
+A profile may implement:
+
+- `qiskit_run_options(...)`: translate wrapper context into backend-specific
+  `backend.run()` options.
+- `qiskit_job_result(job, timeout=None)`: customize result waiting.
+- `qiskit_record_extra(context)`: add non-provider-specific run metadata.
+- `set_qubit_mapping(circuit, mapping)`: attach explicit placement metadata.
+- metadata methods such as `get_device_info()` and
+  `get_calibration_snapshot()`.
+
+Direct providers are loaded by naming convention. `--provider iqm` imports
+`qhw_util.iqm.backend` and calls `create_backend()`. A new provider should live
+under its own `scripts/qhw_util/<provider>/` package, export
+`create_backend()`, return normalized qhw records, and emit raw native payloads
+with the generic `_raw_provider` sidecar key when raw artifacts are useful.
+
 ### Result Normalization
 
 All Qiskit-authored workflows return the same artifact shape:

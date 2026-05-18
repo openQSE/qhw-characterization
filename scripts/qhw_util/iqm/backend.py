@@ -800,3 +800,7 @@ class DirectIQMBackend:
 
 	def finish(self, rc: int = 0) -> int:
 		return rc
+
+
+def create_backend():
+	return DirectIQMBackend()
