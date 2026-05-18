@@ -10,14 +10,15 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from qfw_iqm_util.backend import add_backend_argument, get_backend
-from qfw_iqm_util.output import create_run_paths
-from qfw_iqm_util.output import render_json_output
-from qfw_iqm_util.output import render_text_output
-from qfw_iqm_util.output import script_output_path
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.output import write_json
-from qfw_iqm_util.output import write_script_output
+from qhw_util.args import add_common_arguments
+from qhw_util.backend import get_backend_from_args
+from qhw_util.output import create_run_paths
+from qhw_util.output import render_json_output
+from qhw_util.output import render_text_output
+from qhw_util.output import script_output_path
+from qhw_util.output import to_jsonable
+from qhw_util.output import write_json
+from qhw_util.output import write_script_output
 
 
 def summarize_backend(info: dict[str, Any]) -> dict[str, Any]:
@@ -33,21 +34,16 @@ def summarize_backend(info: dict[str, Any]) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Check that QFw-IQM can reach an IQM backend.",
+		description="Check that the test workflow can reach a backend.",
 	)
-	parser.add_argument("--output-dir", type=Path, default=None)
-	parser.add_argument("--run-id", default=None)
-	parser.add_argument("--system-up-timeout", type=int, default=40)
-	parser.add_argument("--calibration-set-id", default=None)
-	add_backend_argument(parser)
-	parser.add_argument("--json", action="store_true")
+	add_common_arguments(parser, calibration=True)
 	return parser.parse_args()
 
 
 def main() -> int:
 	args = parse_args()
 	paths = create_run_paths(__file__, args.output_dir, args.run_id)
-	backend = get_backend(args.backend, args.system_up_timeout)
+	backend = get_backend_from_args(args)
 
 	result = {
 		"ok": True,

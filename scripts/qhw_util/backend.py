@@ -1,4 +1,4 @@
-"""Backend selection for IQM workflows."""
+"""Backend selection for hardware test workflows."""
 
 from __future__ import annotations
 
@@ -7,22 +7,9 @@ from typing import Any
 import os
 import time
 
-from qfw_iqm_util.qiskit_exec import build_qiskit_run_record
-from qfw_iqm_util.qiskit_exec import ensure_circuit_list
-
-BACKEND_CHOICES = ("auto", "qfw", "direct")
-
-
-def add_backend_argument(parser):
-	parser.add_argument(
-		"--backend",
-		choices=BACKEND_CHOICES,
-		default="auto",
-		help=(
-			"IQM execution backend. Default: auto, which uses QFw when "
-			"available and falls back to direct iqm-client access."
-		),
-	)
+from qhw_util.args import BACKEND_CHOICES
+from qhw_util.qiskit_exec import build_qiskit_run_record
+from qhw_util.qiskit_exec import ensure_circuit_list
 
 
 def qfw_available() -> bool:
@@ -133,7 +120,8 @@ class BackendWrapper:
 		)
 
 
-def get_backend(mode: str = "auto", system_up_timeout: int = 40):
+def get_backend(mode: str = "auto", system_up_timeout: int = 40,
+		provider: str = "iqm", qfw_type=None, qfw_capabilities=None):
 	if mode not in BACKEND_CHOICES:
 		raise ValueError(f"invalid backend mode {mode!r}")
 
@@ -142,17 +130,35 @@ def get_backend(mode: str = "auto", system_up_timeout: int = 40):
 			raise RuntimeError(
 				"QFw backend was requested, but QFw is not available. "
 				"Source qfw_activate and run through qfw_srun.sh.")
-		from qfw_iqm_util.backend_qfw import QFwIQMBackend
-		return BackendWrapper(QFwIQMBackend(
-			system_up_timeout=system_up_timeout))
+		from qhw_util.qfw.backend import QFwBackend
+		return BackendWrapper(QFwBackend(
+			system_up_timeout=system_up_timeout,
+			qfw_type=qfw_type,
+			qfw_capabilities=qfw_capabilities))
 
 	if mode == "auto" and qfw_available():
-		from qfw_iqm_util.backend_qfw import QFwIQMBackend
-		return BackendWrapper(QFwIQMBackend(
-			system_up_timeout=system_up_timeout))
+		from qhw_util.qfw.backend import QFwBackend
+		return BackendWrapper(QFwBackend(
+			system_up_timeout=system_up_timeout,
+			qfw_type=qfw_type,
+			qfw_capabilities=qfw_capabilities))
 
 	if mode == "auto" or mode == "direct":
-		from qfw_iqm_util.backend_direct import DirectIQMBackend
+		if provider != "iqm":
+			raise RuntimeError(
+				f"unsupported direct provider {provider!r}; only iqm "
+				"is implemented")
+		from qhw_util.iqm.backend import DirectIQMBackend
 		return BackendWrapper(DirectIQMBackend())
 
 	raise RuntimeError(f"unsupported backend mode {mode!r}")
+
+
+def get_backend_from_args(args):
+	return get_backend(
+		args.backend,
+		system_up_timeout=args.system_up_timeout,
+		provider=getattr(args, "provider", "iqm"),
+		qfw_type=getattr(args, "qfw_type", None),
+		qfw_capabilities=getattr(args, "qfw_capability", None),
+	)

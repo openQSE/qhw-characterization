@@ -13,11 +13,11 @@ import os
 import re
 import time
 
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.qhw import QHW_IQM_DEVICE_ID_KEY, QHW_IQM_KIND_KEY
-from qfw_iqm_util.qhw import normalize_iqm_payload, qhw_device_id
-from qfw_iqm_util.qiskit_exec import optional_attr_data
-from qfw_iqm_util.timing import build_timing_summary
+from qhw_util.iqm.qhw import QHW_IQM_DEVICE_ID_KEY, QHW_IQM_KIND_KEY
+from qhw_util.iqm.qhw import normalize_iqm_payload, qhw_device_id
+from qhw_util.output import to_jsonable
+from qhw_util.qiskit_exec import optional_attr_data
+from qhw_util.timing import build_timing_summary
 
 REQUIRED_ENV = ("QFW_QC_URL", "QFW_API_KEY")
 DEFAULT_REQUEST_TIMEOUT = 30.0
@@ -60,7 +60,7 @@ def load_env() -> EnvConfig:
 	return EnvConfig(
 		url=os.environ["QFW_QC_URL"].strip(),
 		api_key=os.environ["QFW_API_KEY"].strip(),
-		quantum_computer=os.environ.get("QFW_IQM_QUANTUM_COMPUTER"),
+		quantum_computer=os.environ.get("QHW_IQM_QUANTUM_COMPUTER"),
 	)
 
 
@@ -439,7 +439,7 @@ def build_manual_iqm_circuit(qasm, dynamic_architecture, mapping):
 				f"statement: {statement}")
 
 	return Circuit(
-		name="qfw_iqm_circuit",
+		name="qhw_iqm_circuit",
 		instructions=tuple(operations),
 		metadata={"logical_to_physical": to_jsonable(qubit_map)},
 	)
@@ -475,9 +475,9 @@ class DirectIQMBackend:
 		self._config = load_env()
 		self._qhw_device_id = qhw_device_id()
 		self._request_timeout = get_env_float(
-			"QFW_IQM_REQUEST_TIMEOUT", DEFAULT_REQUEST_TIMEOUT)
+			"QHW_IQM_REQUEST_TIMEOUT", DEFAULT_REQUEST_TIMEOUT)
 		self._job_timeout = get_env_float(
-			"QFW_IQM_JOB_TIMEOUT", DEFAULT_JOB_TIMEOUT)
+			"QHW_IQM_JOB_TIMEOUT", DEFAULT_JOB_TIMEOUT)
 
 	def _qhw_tags(self, kind: str) -> dict[str, str | None]:
 		return {
@@ -775,31 +775,41 @@ class DirectIQMBackend:
 		return job.result(timeout=timeout or self._job_timeout)
 
 	def qiskit_record_extra(self, context):
-		return {
-			"iqm": {
-				"calibration_set_id": context.get("calibration_set_id"),
-				"use_timeslot": context.get("use_timeslot"),
-			},
-		}
+		del context
+		return None
 
 	def extract_result_and_normalize(self, job, result, record, context):
 		del result, context
 		iqm_job = optional_attr_data(job, "_job")
-		record.setdefault("result", {}).setdefault("iqm", {})["job"] = iqm_job
 		raw_payload = {
 			"qiskit_result": (
 				record.get("result", {}).get("qiskit", {}).get("result")),
 			"iqm_job": iqm_job,
 		}
-		record.setdefault("result", {})["qhw_result"] = self._normalize_qhw(
-			"result", raw_payload)
+		qhw_result = self._normalize_qhw("result", raw_payload)
+		record.setdefault("result", {})["qhw_result"] = qhw_result
+		self._apply_qhw_timing(record, qhw_result)
 		record.update(self._qhw_tags("result"))
 		record["_raw_iqm"] = raw_payload
 		return record
 
+	def _apply_qhw_timing(self, record, qhw_result):
+		timing = qhw_result.get("timing")
+		if not isinstance(timing, dict) or not timing:
+			return
+		timing_summary = record.setdefault("result", {}).setdefault(
+			"timing_summary", {})
+		timing_summary["backend_timing"] = timing
+		timing_summary["durations_seconds"] = timing.get(
+			"durations_seconds", {})
+		timing_summary["timeline_events"] = (
+			timing.get("timeline")
+			or timing.get("timeline_events")
+			or [])
+
 	def run_circuits(self, circuits, shots: int = 100,
 		     calibration_set_id=None, timeout=None, use_timeslot=False):
-		from qfw_iqm_util.backend import BackendWrapper
+		from qhw_util.backend import BackendWrapper
 		return BackendWrapper(self).run_circuits(
 			circuits,
 			shots=shots,

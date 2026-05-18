@@ -9,17 +9,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from qfw_iqm_util.backend import add_backend_argument, get_backend
-from qfw_iqm_util.output import backend_result_qhw
-from qfw_iqm_util.output import create_run_paths
-from qfw_iqm_util.output import render_json_output
-from qfw_iqm_util.output import render_text_output
-from qfw_iqm_util.output import script_output_path
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.output import write_backend_result_artifacts
-from qfw_iqm_util.output import write_json
-from qfw_iqm_util.output import write_script_output
-from qfw_iqm_util.qiskit_exec import write_qasm2_artifact
+from qhw_util.args import add_common_arguments
+from qhw_util.backend import get_backend_from_args
+from qhw_util.output import backend_result_qhw
+from qhw_util.output import create_run_paths
+from qhw_util.output import render_json_output
+from qhw_util.output import render_text_output
+from qhw_util.output import script_output_path
+from qhw_util.output import to_jsonable
+from qhw_util.output import write_backend_result_artifacts
+from qhw_util.output import write_json
+from qhw_util.output import write_script_output
+from qhw_util.qiskit_exec import write_qasm2_artifact
 
 
 def build_smoke_circuit(flip: bool):
@@ -27,8 +28,8 @@ def build_smoke_circuit(flip: bool):
 		from qiskit import QuantumCircuit
 	except Exception as exc:
 		raise RuntimeError(
-			"qiskit is required for iqm_submit_smoke.py") from exc
-	circuit = QuantumCircuit(1, 1, name="iqm_submit_smoke")
+			"qiskit is required for submit_smoke.py") from exc
+	circuit = QuantumCircuit(1, 1, name="submit_smoke")
 	if flip:
 		circuit.x(0)
 	circuit.measure(0, 0)
@@ -39,23 +40,16 @@ def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description="Run a minimal IQM circuit authored with Qiskit.",
 	)
-	parser.add_argument("--output-dir", type=Path, default=None)
-	parser.add_argument("--run-id", default=None)
-	parser.add_argument("--system-up-timeout", type=int, default=40)
 	parser.add_argument("--shots", type=int, default=100)
-	parser.add_argument("--calibration-set-id", default=None)
-	parser.add_argument("--timeout", type=float, default=300.0)
-	parser.add_argument("--use-timeslot", action="store_true")
 	parser.add_argument("--flip", action="store_true")
-	add_backend_argument(parser)
-	parser.add_argument("--json", action="store_true")
+	add_common_arguments(parser, calibration=True, execution=True)
 	return parser.parse_args()
 
 
 def main() -> int:
 	args = parse_args()
 	paths = create_run_paths(__file__, args.output_dir, args.run_id)
-	backend = get_backend(args.backend, args.system_up_timeout)
+	backend = get_backend_from_args(args)
 
 	circuit = build_smoke_circuit(args.flip)
 	qasm_file = paths.circuits / "smoke.qasm"

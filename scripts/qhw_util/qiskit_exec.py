@@ -1,4 +1,4 @@
-"""Shared Qiskit execution helpers for QFw-IQM workflows."""
+"""Shared Qiskit execution helpers for qhw test workflows."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 import time
 
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.timing import build_timing_summary as build_iqm_timing_summary
+from qhw_util.output import to_jsonable
+from qhw_util.timing import build_timing_summary
 
 
 def ensure_circuit_list(circuits):
@@ -16,7 +16,7 @@ def ensure_circuit_list(circuits):
 		from qiskit import QuantumCircuit
 	except Exception as exc:
 		raise RuntimeError(
-			"qiskit is required for QFw-IQM circuit workflows") from exc
+			"qiskit is required for qhw circuit workflows") from exc
 
 	if isinstance(circuits, QuantumCircuit):
 		return [circuits]
@@ -103,7 +103,7 @@ def _result_timeline_timing(result_dict: dict[str, Any],
 			"total_wall_seconds": wall_seconds,
 		},
 	}
-	return build_iqm_timing_summary(record)
+	return build_timing_summary(record)
 
 
 def _qfw_backend_metadata(result_dict: dict[str, Any]) -> list[dict[str, Any]]:
@@ -125,17 +125,29 @@ def qiskit_result_metadata(result_dict: dict[str, Any]) -> list[dict[str, Any]]:
 	return _qfw_backend_metadata(result_dict)
 
 
-def _metadata_timing_summaries(
+def _metadata_qhw_timings(
 		metadata: list[dict[str, Any]]) -> list[dict[str, Any]]:
 	summaries = []
 	for item in metadata:
-		iqm = item.get("iqm", {})
-		if not isinstance(iqm, dict):
+		qhw_result = item.get("qhw_result")
+		if not isinstance(qhw_result, dict):
 			continue
-		summary = iqm.get("timing_summary")
-		if isinstance(summary, dict) and summary:
-			summaries.append(summary)
+		timing = qhw_result.get("timing")
+		if isinstance(timing, dict) and timing:
+			summaries.append(timing)
 	return summaries
+
+
+def _set_timing_summary_backend_timing(
+		timing_summary: dict[str, Any],
+		backend_timing: dict[str, Any]) -> None:
+	timing_summary["backend_timing"] = backend_timing
+	timing_summary["durations_seconds"] = backend_timing.get(
+		"durations_seconds", {})
+	timing_summary["timeline_events"] = (
+		backend_timing.get("timeline")
+		or backend_timing.get("timeline_events")
+		or [])
 
 
 def _add_backend_timing(timing_summary: dict[str, Any],
@@ -145,26 +157,18 @@ def _add_backend_timing(timing_summary: dict[str, Any],
 	direct_timing = _result_timeline_timing(
 		result_dict, job_id, wall_seconds)
 	if direct_timing:
-		timing_summary["backend_timing"] = direct_timing
-		timing_summary["durations_seconds"] = direct_timing.get(
-			"durations_seconds", {})
-		timing_summary["timeline_events"] = direct_timing.get(
-			"timeline_events", [])
+		_set_timing_summary_backend_timing(timing_summary, direct_timing)
 		return
 
 	metadata = _qfw_backend_metadata(result_dict)
-	backend_summaries = _metadata_timing_summaries(metadata)
+	backend_summaries = _metadata_qhw_timings(metadata)
 	if not backend_summaries:
 		return
 
 	timing_summary["backend_timing_summaries"] = backend_summaries
 	if len(backend_summaries) == 1:
-		backend_timing = backend_summaries[0]
-		timing_summary["backend_timing"] = backend_timing
-		timing_summary["durations_seconds"] = backend_timing.get(
-			"durations_seconds", {})
-		timing_summary["timeline_events"] = backend_timing.get(
-			"timeline_events", [])
+		_set_timing_summary_backend_timing(
+			timing_summary, backend_summaries[0])
 
 
 def build_qiskit_run_record(backend_name: str,
@@ -179,7 +183,7 @@ def build_qiskit_run_record(backend_name: str,
 	job_id = get_job_id(job)
 	result_dict = result_to_dict(result)
 	timing_summary = {
-		"schema": "qfw-iqm-qiskit-timing-summary-v1",
+		"schema": "qhw-qiskit-timing-summary-v1",
 		"job_id": job_id,
 		"backend": backend_name,
 		"timestamp_utc": datetime.now(timezone.utc).isoformat(),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve qfw_iqm_run_all.py test plans from the YAML manifest."""
+"""Resolve run-all test plans from the YAML manifest."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ try:
 	import yaml
 except Exception as exc:  # pragma: no cover - import error path
 	print(
-		"ERROR: PyYAML is required to read config/qfw_iqm_tests.yaml. "
+		"ERROR: PyYAML is required to read config/qhw_tests.yaml. "
 		"Install this repository's requirements.txt.",
 		file=sys.stderr,
 	)
@@ -110,6 +110,46 @@ def resolve_args(manifest: dict[str, Any], test: dict[str, Any],
 	return result
 
 
+def resolve_backend_args(test: dict[str, Any],
+			 backend_override: str | None = None) -> list[str]:
+	config = test.get("backend", {})
+	if config is None:
+		config = {}
+	if not isinstance(config, dict):
+		raise ValueError(f"backend config must be a mapping: {test.get('name')}")
+
+	mode = backend_override or config.get("default", "auto")
+	args = ["--backend", str(mode)]
+
+	provider = config.get("provider")
+	direct_config = config.get("direct", {})
+	if isinstance(direct_config, dict):
+		provider = direct_config.get("provider", provider)
+	if provider:
+		args.extend(["--provider", str(provider)])
+
+	qfw_config = config.get("qfw", {})
+	if qfw_config is None:
+		qfw_config = {}
+	if not isinstance(qfw_config, dict):
+		raise ValueError(f"qfw backend config must be a mapping: {test.get('name')}")
+	qfw_type = qfw_config.get("type")
+	if qfw_type:
+		args.extend(["--qfw-type", str(qfw_type)])
+	capabilities = qfw_config.get("capabilities", [])
+	if isinstance(capabilities, str):
+		capabilities = [capabilities]
+	if capabilities is None:
+		capabilities = []
+	if not isinstance(capabilities, list):
+		raise ValueError(
+			f"qfw capabilities must be a list: {test.get('name')}")
+	for capability in capabilities:
+		args.extend(["--qfw-capability", str(capability)])
+
+	return args
+
+
 def selected_tests(manifest: dict[str, Any], requested_level: str) -> list[dict[str, Any]]:
 	requested_rank = level_rank(manifest, requested_level)
 	tests = manifest.get("tests", [])
@@ -130,9 +170,11 @@ def selected_tests(manifest: dict[str, Any], requested_level: str) -> list[dict[
 	return selected
 
 
-def emit_plan(manifest: dict[str, Any], requested_level: str) -> None:
+def emit_plan(manifest: dict[str, Any], requested_level: str,
+	      backend_override: str | None = None) -> None:
 	for test in selected_tests(manifest, requested_level):
 		fields = [str(test["script"])]
+		fields.extend(resolve_backend_args(test, backend_override))
 		fields.extend(resolve_args(manifest, test, requested_level))
 		if any("\t" in field or "\n" in field for field in fields):
 			raise ValueError("manifest values must not contain tabs or newlines")
@@ -156,6 +198,7 @@ def parse_args() -> argparse.Namespace:
 
 	plan = subparsers.add_parser("plan")
 	plan.add_argument("--level", required=True)
+	plan.add_argument("--backend", default=None)
 	return parser.parse_args()
 
 
@@ -167,7 +210,7 @@ def main() -> int:
 	elif args.command == "levels":
 		emit_levels(manifest)
 	elif args.command == "plan":
-		emit_plan(manifest, args.level)
+		emit_plan(manifest, args.level, args.backend)
 	else:
 		raise ValueError(f"unsupported command: {args.command}")
 	return 0

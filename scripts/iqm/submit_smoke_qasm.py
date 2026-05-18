@@ -7,17 +7,18 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from qfw_iqm_util.backend import add_backend_argument, get_backend
-from qfw_iqm_util.output import create_run_paths
-from qfw_iqm_util.output import render_json_output
-from qfw_iqm_util.output import render_text_output
-from qfw_iqm_util.output import script_output_path
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.output import write_json
-from qfw_iqm_util.output import write_script_output
-from qfw_iqm_util.timing import build_timing_summary
+from qhw_util.args import add_common_arguments
+from qhw_util.backend import get_backend_from_args
+from qhw_util.output import create_run_paths
+from qhw_util.output import render_json_output
+from qhw_util.output import render_text_output
+from qhw_util.output import script_output_path
+from qhw_util.output import to_jsonable
+from qhw_util.output import write_json
+from qhw_util.output import write_script_output
+from qhw_util.timing import build_timing_summary
 
 
 def build_smoke_qasm(flip: bool) -> str:
@@ -34,26 +35,19 @@ def build_smoke_qasm(flip: bool) -> str:
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Run a minimal IQM circuit.",
+		description="Run a minimal IQM-native OpenQASM circuit.",
 	)
-	parser.add_argument("--output-dir", type=Path, default=None)
-	parser.add_argument("--run-id", default=None)
-	parser.add_argument("--system-up-timeout", type=int, default=40)
 	parser.add_argument("--shots", type=int, default=100)
 	parser.add_argument("--qubit", default=None)
-	parser.add_argument("--calibration-set-id", default=None)
-	parser.add_argument("--timeout", type=float, default=300.0)
-	parser.add_argument("--use-timeslot", action="store_true")
 	parser.add_argument("--flip", action="store_true")
-	add_backend_argument(parser)
-	parser.add_argument("--json", action="store_true")
+	add_common_arguments(parser, calibration=True, execution=True)
 	return parser.parse_args()
 
 
 def main() -> int:
 	args = parse_args()
 	paths = create_run_paths(__file__, args.output_dir, args.run_id)
-	backend = get_backend(args.backend, args.system_up_timeout)
+	backend = get_backend_from_args(args)
 
 	qasm = build_smoke_qasm(args.flip)
 	info = {

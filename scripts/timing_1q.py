@@ -15,17 +15,18 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from qfw_iqm_util.backend import add_backend_argument, get_backend
-from qfw_iqm_util.output import backend_result_qhw
-from qfw_iqm_util.output import create_run_paths
-from qfw_iqm_util.output import render_json_output
-from qfw_iqm_util.output import render_text_output
-from qfw_iqm_util.output import script_output_path
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.output import write_backend_result_artifacts
-from qfw_iqm_util.output import write_json
-from qfw_iqm_util.output import write_script_output
-from qfw_iqm_util.qiskit_exec import write_qasm2_artifact
+from qhw_util.args import add_common_arguments
+from qhw_util.backend import get_backend_from_args
+from qhw_util.output import backend_result_qhw
+from qhw_util.output import create_run_paths
+from qhw_util.output import render_json_output
+from qhw_util.output import render_text_output
+from qhw_util.output import script_output_path
+from qhw_util.output import to_jsonable
+from qhw_util.output import write_backend_result_artifacts
+from qhw_util.output import write_json
+from qhw_util.output import write_script_output
+from qhw_util.qiskit_exec import write_qasm2_artifact
 
 SUPPORTED_GATES = ("x", "rx", "ry")
 PRIMARY_METRIC = "execution_per_shot_seconds"
@@ -124,7 +125,7 @@ def build_gate_circuit(gate: str, depth: int, angle: float, name: str):
 		from qiskit import QuantumCircuit
 	except Exception as exc:
 		raise RuntimeError(
-			"qiskit is required for iqm_timing_1q.py") from exc
+			"qiskit is required for timing_1q.py") from exc
 
 	circuit = QuantumCircuit(1, 1, name=name)
 	for _ in range(depth):
@@ -694,10 +695,6 @@ def parse_args() -> argparse.Namespace:
 			"Measure IQM single-qubit gate timing with Qiskit-authored "
 			"circuits."),
 	)
-	parser.add_argument("--output-dir", type=Path, default=None)
-	parser.add_argument("--run-id", default=None)
-	parser.add_argument("--system-up-timeout", type=int, default=40)
-	parser.add_argument("--calibration-set-id", default=None)
 	parser.add_argument("--qubits", default="all")
 	parser.add_argument("--gates", type=parse_gate_list,
 			    default=parse_gate_list("rx,ry"))
@@ -706,11 +703,8 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--shots", type=int, default=100)
 	parser.add_argument("--repetitions", type=int, default=1)
 	parser.add_argument("--angle", type=parse_angle, default=math.pi)
-	parser.add_argument("--timeout", type=float, default=300.0)
-	parser.add_argument("--use-timeslot", action="store_true")
-	parser.add_argument("--dry-run", action="store_true")
-	add_backend_argument(parser)
-	parser.add_argument("--json", action="store_true")
+	add_common_arguments(
+		parser, calibration=True, execution=True, dry_run=True)
 	return parser.parse_args()
 
 
@@ -722,8 +716,7 @@ def main() -> int:
 		raise ValueError("--repetitions must be at least 1")
 
 	paths = create_run_paths(__file__, args.output_dir, args.run_id)
-	backend = None if args.dry_run else get_backend(
-		args.backend, args.system_up_timeout)
+	backend = None if args.dry_run else get_backend_from_args(args)
 	backend_info = {} if args.dry_run else to_jsonable(
 		backend.get_backend_info())
 	active_qubits = backend_info.get("active_qubits", [])

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure IQM fixed overhead, shot scaling, and batch scaling."""
+"""Measure hardware timing overhead using Qiskit-authored circuits."""
 
 from __future__ import annotations
 
@@ -13,14 +13,44 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from qfw_iqm_util.backend import add_backend_argument, get_backend
-from qfw_iqm_util.output import create_run_paths
-from qfw_iqm_util.output import render_json_output
-from qfw_iqm_util.output import render_text_output
-from qfw_iqm_util.output import script_output_path
-from qfw_iqm_util.output import to_jsonable
-from qfw_iqm_util.output import write_json
-from qfw_iqm_util.output import write_script_output
+from qhw_util.args import add_common_arguments
+from qhw_util.backend import get_backend_from_args
+from qhw_util.output import backend_result_qhw
+from qhw_util.output import create_run_paths
+from qhw_util.output import render_json_output
+from qhw_util.output import render_text_output
+from qhw_util.output import script_output_path
+from qhw_util.output import to_jsonable
+from qhw_util.output import write_backend_result_artifacts
+from qhw_util.output import write_json
+from qhw_util.output import write_script_output
+from qhw_util.qiskit_exec import write_qasm2_artifact
+
+
+def dry_run_result(cid: str, shots: int, num_circuits: int) -> dict[str, Any]:
+	return {
+		"cid": cid,
+		"result": {
+			"qhw_result": {
+				"schema": "qhw-result-v1",
+				"provider": "dry-run",
+				"device": {"id": "dry-run", "provider": "dry-run"},
+				"job": {"id": cid, "status": "completed"},
+				"result": {
+					"shots": shots,
+					"num_circuits": num_circuits,
+					"counts": {},
+					"success": True,
+				},
+				"timing": {"timestamps": {}, "timeline": [],
+					   "durations_seconds": {}},
+				"errors": [],
+				"extensions": {},
+				"raw": {"included": False, "format": None, "artifacts": []},
+			},
+		},
+		"rc": 0,
+	}
 
 
 def parse_int_list(value: str) -> list[int]:
@@ -39,16 +69,15 @@ def parse_int_list(value: str) -> list[int]:
 	return items
 
 
-def build_measure_qasm(width: int) -> str:
-	measures = "\n".join(
-		f"measure q[{index}] -> c[{index}];" for index in range(width))
-	return (
-		"OPENQASM 2.0;\n"
-		"include \"qelib1.inc\";\n"
-		f"qreg q[{width}];\n"
-		f"creg c[{width}];\n"
-		f"{measures}\n"
-	)
+def build_measure_circuit(width: int, name: str):
+	try:
+		from qiskit import QuantumCircuit
+	except Exception as exc:
+		raise RuntimeError(
+			"qiskit is required for timing_overhead.py") from exc
+	circuit = QuantumCircuit(width, width, name=name)
+	circuit.measure(range(width), range(width))
+	return circuit
 
 
 def resolve_widths(widths: str, active_qubits: list[Any],
@@ -76,46 +105,18 @@ def resolve_widths(widths: str, active_qubits: list[Any],
 	return resolved
 
 
-def build_info(qasm: str, args: argparse.Namespace,
-	       shots: int, width: int, cid: str) -> dict[str, Any]:
-	info = {
-		"cid": cid,
-		"qasm": qasm,
-		"num_qubits": width,
-		"num_shots": shots,
-		"compiler": "iqm-native",
-		"timeout": args.timeout,
-		"use_timeslot": args.use_timeslot,
-	}
-	if args.calibration_set_id:
-		info["calibration_set_id"] = args.calibration_set_id
-	if args.qubit:
-		if width != 1:
-			raise ValueError("--qubit can only be used with width 1")
-		info["iqm_qubit_mapping"] = {0: args.qubit}
-	return info
-
-
-def extract_iqm_payload(result: dict[str, Any]) -> dict[str, Any]:
-	payload = result.get("result", {})
-	if not isinstance(payload, dict):
-		return {}
-	iqm_payload = payload.get("iqm", {})
-	return iqm_payload if isinstance(iqm_payload, dict) else {}
-
-
 def extract_metrics(script_wall_seconds: float,
 		    result: dict[str, Any]) -> dict[str, float | None]:
-	iqm_payload = extract_iqm_payload(result)
-	timing_summary = iqm_payload.get("timing_summary") or {}
-	client_wall = timing_summary.get("client_wall_seconds", {})
-	durations = timing_summary.get("durations_seconds", {})
+	qhw_result = backend_result_qhw(result)
+	if not qhw_result:
+		raise ValueError("backend result did not include normalized qhw_result")
+	timing = qhw_result.get("timing", {})
+	durations = timing.get("durations_seconds", {})
 	return {
 		"script_wall_seconds": script_wall_seconds,
-		"client_total_seconds": client_wall.get("total"),
-		"server_total_seconds": durations.get(
-			"server_total_created_to_completed"),
-		"execution_seconds": durations.get("execution"),
+		"client_total_seconds": None,
+		"server_total_seconds": durations.get("provider_total_seconds"),
+		"execution_seconds": durations.get("execution_seconds"),
 	}
 
 
@@ -184,32 +185,25 @@ def build_fits(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def result_job_ids(result: dict[str, Any]) -> list[str]:
-	iqm_payload = extract_iqm_payload(result)
-	job_id = iqm_payload.get("job_id")
-	if job_id:
-		return [str(job_id)]
-	results = result.get("result", {}).get("results", [])
-	job_ids = []
-	for item in results if isinstance(results, list) else []:
-		item_iqm = extract_iqm_payload(item)
-		if item_iqm.get("job_id"):
-			job_ids.append(str(item_iqm["job_id"]))
-	return job_ids
+	qhw_result = backend_result_qhw(result)
+	if not qhw_result:
+		raise ValueError("backend result did not include normalized qhw_result")
+	job_id = (qhw_result.get("job", {}) or {}).get("id")
+	return [str(job_id)] if job_id else []
 
 
-def run_case(backend, infos: list[dict[str, Any]], dry_run: bool):
+def run_case(backend, circuits, args: argparse.Namespace,
+	     shots: int, dry_run: bool):
 	if dry_run:
-		return {
-			"cid": infos[0]["cid"],
-			"result": {
-				"dry_run": True,
-				"batch_semantics": "not-submitted",
-			},
-			"rc": 0,
-		}
-	if len(infos) == 1:
-		return to_jsonable(backend.sync_run(infos[0]))
-	return to_jsonable(backend.sync_run_many(infos))
+		name = getattr(circuits[0], "name", "dry-run") if circuits else "dry-run"
+		return dry_run_result(name, shots, len(circuits))
+	job = backend.run(
+		circuits,
+		shots=shots,
+		calibration_set_id=args.calibration_set_id,
+		timeout=args.timeout,
+		use_timeslot=args.use_timeslot)
+	return to_jsonable(job.result(timeout=args.timeout))
 
 
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
@@ -227,10 +221,6 @@ def parse_args() -> argparse.Namespace:
 		description=(
 			"Measure IQM fixed overhead, shot scaling, and batch scaling."),
 	)
-	parser.add_argument("--output-dir", type=Path, default=None)
-	parser.add_argument("--run-id", default=None)
-	parser.add_argument("--system-up-timeout", type=int, default=40)
-	parser.add_argument("--calibration-set-id", default=None)
 	parser.add_argument("--shots-sweep", type=parse_int_list,
 			    default=parse_int_list("1,10,100,1000"))
 	parser.add_argument("--batch-sweep", type=parse_int_list,
@@ -238,12 +228,8 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--batch-shots", type=int, default=100)
 	parser.add_argument("--widths", default="1")
 	parser.add_argument("--repetitions", type=int, default=1)
-	parser.add_argument("--timeout", type=float, default=300.0)
-	parser.add_argument("--qubit", default=None)
-	parser.add_argument("--use-timeslot", action="store_true")
-	parser.add_argument("--dry-run", action="store_true")
-	add_backend_argument(parser)
-	parser.add_argument("--json", action="store_true")
+	add_common_arguments(
+		parser, calibration=True, execution=True, dry_run=True)
 	return parser.parse_args()
 
 
@@ -255,8 +241,7 @@ def main() -> int:
 		raise ValueError("--batch-shots must be at least 1")
 
 	paths = create_run_paths(__file__, args.output_dir, args.run_id)
-	backend = None if args.dry_run else get_backend(
-		args.backend, args.system_up_timeout)
+	backend = None if args.dry_run else get_backend_from_args(args)
 	backend_info = {} if args.dry_run else to_jsonable(
 		backend.get_backend_info())
 	active_qubits = backend_info.get("active_qubits", [])
@@ -271,16 +256,15 @@ def main() -> int:
 	for repetition in range(args.repetitions):
 		for width in widths:
 			for shots in args.shots_sweep:
-				cid = (
-					f"shot_w{width}_s{shots}_r{repetition}")
-				qasm = build_measure_qasm(width)
+				cid = f"shot_w{width}_s{shots}_r{repetition}"
+				circuit = build_measure_circuit(width, cid)
 				qasm_file = paths.circuits / f"{cid}.qasm"
 				result_file = paths.results / f"{cid}.json"
-				qasm_file.write_text(qasm)
-				info = build_info(qasm, args, shots, width, cid)
+				write_qasm2_artifact(circuit, qasm_file)
 				start = time.monotonic()
 				try:
-					result = run_case(backend, [info], args.dry_run)
+					result = run_case(
+						backend, [circuit], args, shots, args.dry_run)
 					ok = result.get("rc") == 0
 					error = None
 				except Exception as exc:
@@ -288,7 +272,8 @@ def main() -> int:
 					ok = False
 					error = str(exc)
 				wall = time.monotonic() - start
-				write_json(result_file, result)
+				result_files = write_backend_result_artifacts(
+					result_file, result)
 				records.append({
 					"experiment": "shot_sweep",
 					"ok": ok,
@@ -301,7 +286,9 @@ def main() -> int:
 					else backend.name,
 					"batch_semantics": "single-circuit",
 					"qasm_files": [str(qasm_file)],
-					"result_file": str(result_file),
+					"result_file": result_files.get("qhw"),
+					"raw_result_file": result_files.get("raw"),
+					"normalized_result_file": result_files.get("qhw"),
 					"job_ids": result_job_ids(result),
 					"metrics": extract_metrics(wall, result),
 				})
@@ -310,20 +297,21 @@ def main() -> int:
 				cid = (
 					f"batch_w{width}_b{batch_size}_"
 					f"s{args.batch_shots}_r{repetition}")
-				infos = []
+				circuits = []
 				qasm_files = []
 				for index in range(batch_size):
-					qasm = build_measure_qasm(width)
+					circuit = build_measure_circuit(
+						width, f"{cid}_{index}")
 					qasm_file = paths.circuits / f"{cid}_{index}.qasm"
-					qasm_file.write_text(qasm)
+					write_qasm2_artifact(circuit, qasm_file)
 					qasm_files.append(str(qasm_file))
-					infos.append(build_info(
-						qasm, args, args.batch_shots, width,
-						f"{cid}_{index}"))
+					circuits.append(circuit)
 				result_file = paths.results / f"{cid}.json"
 				start = time.monotonic()
 				try:
-					result = run_case(backend, infos, args.dry_run)
+					result = run_case(
+						backend, circuits, args, args.batch_shots,
+						args.dry_run)
 					ok = result.get("rc") == 0
 					error = None
 				except Exception as exc:
@@ -331,8 +319,9 @@ def main() -> int:
 					ok = False
 					error = str(exc)
 				wall = time.monotonic() - start
-				write_json(result_file, result)
-				iqm_payload = extract_iqm_payload(result)
+				result_files = write_backend_result_artifacts(
+					result_file, result)
+				qhw_result = backend_result_qhw(result)
 				records.append({
 					"experiment": "batch_sweep",
 					"ok": ok,
@@ -343,12 +332,13 @@ def main() -> int:
 					"batch_size": batch_size,
 					"backend_mode": args.backend if args.dry_run
 					else backend.name,
-					"batch_semantics": iqm_payload.get(
-						"batch_semantics",
-						result.get("result", {}).get(
-							"batch_semantics", "unknown")),
+					"batch_semantics": (
+						"single-qhw-result"
+						if qhw_result else "qiskit-backend-run"),
 					"qasm_files": qasm_files,
-					"result_file": str(result_file),
+					"result_file": result_files.get("qhw"),
+					"raw_result_file": result_files.get("raw"),
+					"normalized_result_file": result_files.get("qhw"),
 					"job_ids": result_job_ids(result),
 					"metrics": extract_metrics(wall, result),
 				})

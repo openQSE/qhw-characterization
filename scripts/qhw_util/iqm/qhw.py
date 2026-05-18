@@ -1,4 +1,4 @@
-"""Helpers for using qhw-iqm normalizers from QFw-IQM workflows."""
+"""Helpers for using qhw-iqm normalizers from qhw workflows."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ QHW_IQM_DEVICE_ID_KEY = "_qhw_iqm_device_id"
 def qhw_device_id(default: str | None = None) -> str | None:
 	value = (
 		os.environ.get("QFW_QPU_DEVICE_ID")
-		or os.environ.get("QFW_IQM_DEVICE_ID")
+		or os.environ.get("QHW_IQM_DEVICE_ID")
 		or default)
 	return value.strip() if isinstance(value, str) and value.strip() else None
 
@@ -28,7 +28,7 @@ def normalize_iqm_payload(kind: str,
 	except Exception as exc:
 		raise RuntimeError(
 			"qhw-iqm is required to normalize direct IQM payloads. "
-			"Install QFw-IQM requirements with: "
+			"Install workflow requirements with: "
 			"python3 -m pip install -r requirements.txt") from exc
 
 	resolved_device_id = qhw_device_id(device_id)

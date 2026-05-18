@@ -1,32 +1,75 @@
-"""QFw-backed IQM workflow adapter."""
+"""QFw-backed workflow adapter."""
 
 from __future__ import annotations
 
-from qfw_iqm_util.qfw import finish, reserve_iqm_qpm
-from qfw_iqm_util.qhw import QHW_IQM_DEVICE_ID_KEY, QHW_IQM_KIND_KEY
-from qfw_iqm_util.qhw import normalize_iqm_payload, qhw_device_id
-from qfw_iqm_util.qiskit_exec import qiskit_result_metadata
+from time import sleep
+
+from qhw_util.qiskit_exec import qiskit_result_metadata
 
 
-class QFwIQMBackend:
+def _selector_values(values, default):
+	if values is None:
+		values = default
+	if isinstance(values, str):
+		values = [values]
+	result = []
+	for value in values:
+		for item in str(value).split(","):
+			item = item.strip()
+			if item:
+				result.append(item)
+	return result
+
+
+def _enum_flag(enum_type, prefix: str, values, default):
+	items = _selector_values(values, default)
+	if not items or any(item.lower() in ("any", "-1") for item in items):
+		return -1
+
+	flag = enum_type(0)
+	for item in items:
+		name = item.upper().replace("-", "_")
+		if not name.startswith(f"{prefix}_"):
+			name = f"{prefix}_{name}"
+		try:
+			flag |= getattr(enum_type, name)
+		except AttributeError as exc:
+			valid = ", ".join(enum_type.__members__)
+			raise ValueError(
+				f"unsupported QFw selector {item!r}; valid values: "
+				f"{valid}") from exc
+	return flag
+
+
+class QFwBackend:
 	name = "qfw"
 
-	def __init__(self, system_up_timeout: int = 40):
+	def __init__(self, system_up_timeout: int = 40, qfw_type=None,
+		     qfw_capabilities=None):
 		self._system_up_timeout = system_up_timeout
-		self._qpm = None
 		self._qiskit_backend = None
-		self._qhw_device_id = qhw_device_id()
-
-	def _qhw_tags(self, kind: str) -> dict[str, str | None]:
-		return {
-			QHW_IQM_KIND_KEY: kind,
-			QHW_IQM_DEVICE_ID_KEY: self._qhw_device_id,
-		}
+		self._qpm_ready = False
+		self._qfw_type = qfw_type
+		self._qfw_capabilities = qfw_capabilities
 
 	def _service(self):
-		if self._qpm is None:
-			self._qpm = reserve_iqm_qpm(self._system_up_timeout)
-		return self._qpm
+		qpm = self.qiskit_backend().qpm
+		if self._qpm_ready:
+			return qpm
+		from defw_exception import DEFwNotReady
+		waited = 0
+		while waited < self._system_up_timeout:
+			try:
+				qpm.is_ready()
+				self._qpm_ready = True
+				return qpm
+			except Exception as exc:
+				if isinstance(exc, DEFwNotReady):
+					sleep(1)
+					waited += 1
+					continue
+				raise
+		raise TimeoutError("selected QFw QPM did not become ready")
 
 	def get_backend_info(self):
 		return self._service().get_backend_info()
@@ -59,12 +102,16 @@ class QFwIQMBackend:
 	def qiskit_backend(self, calibration_set_id=None):
 		del calibration_set_id
 		if self._qiskit_backend is None:
-			from qfw_qiskit import QFwBackend
+			from qfw_qiskit import QFwBackend as QFwQiskitBackend
 			from qfw_qiskit import QFwBackendCapability
 			from qfw_qiskit import QFwBackendType
-			self._qiskit_backend = QFwBackend(
-				betype=QFwBackendType.QFW_TYPE_IQM,
-				capability=QFwBackendCapability.QFW_CAP_SUPERCONDUCTING)
+			self._qiskit_backend = QFwQiskitBackend(
+				betype=_enum_flag(
+					QFwBackendType, "QFW_TYPE",
+					self._qfw_type, "hardware"),
+				capability=_enum_flag(
+					QFwBackendCapability, "QFW_CAP",
+					self._qfw_capabilities, "superconducting"))
 		return self._qiskit_backend
 
 	def qiskit_run_options(self, shots: int, calibration_set_id=None,
@@ -95,41 +142,23 @@ class QFwIQMBackend:
 			item.get("qhw_result") for item in metadata
 			if isinstance(item.get("qhw_result"), dict)
 		]
-		raw_payloads = [
-			item.get("_raw_iqm") for item in metadata
-			if isinstance(item.get("_raw_iqm"), dict)
-		]
 		if not qhw_results:
 			raise RuntimeError(
-				"QFw IQM result did not include normalized qhw_result "
-				"metadata. Check that the QFw IQM service is returning "
+				"QFw result did not include normalized qhw_result "
+				"metadata. Check that the selected QFw service returns "
 				"qhw-normalized result payloads.")
 
 		if len(qhw_results) == 1:
 			record.setdefault("result", {})["qhw_result"] = qhw_results[0]
-			if raw_payloads:
-				record["_raw_iqm"] = raw_payloads[0]
-			record.update(self._qhw_tags("result"))
 			return record
 
-		raw_payload = {
-			"qiskit_result": result_dict,
-			"qfw_metadata": metadata,
-		}
-		qhw_result = normalize_iqm_payload(
-			"result", raw_payload, device_id=self._qhw_device_id)
-		qhw_result.setdefault("extensions", {})["qfw.v1"] = {
-			"per_circuit_qhw_results": qhw_results,
-			"per_circuit_raw_iqm": raw_payloads,
-		}
-		record.setdefault("result", {})["qhw_result"] = qhw_result
-		record.update(self._qhw_tags("result"))
-		record["_raw_iqm"] = raw_payload
+		record.setdefault("result", {})["qhw_results"] = qhw_results
+		record.setdefault("result", {})["qhw_result"] = qhw_results[0]
 		return record
 
 	def run_circuits(self, circuits, shots: int = 100,
 		     calibration_set_id=None, timeout=None, use_timeslot=False):
-		from qfw_iqm_util.backend import BackendWrapper
+		from qhw_util.backend import BackendWrapper
 		return BackendWrapper(self).run_circuits(
 			circuits,
 			shots=shots,
@@ -139,4 +168,5 @@ class QFwIQMBackend:
 		)
 
 	def finish(self, rc: int = 0) -> int:
+		from qhw_util.qfw.runtime import finish
 		return finish(rc)

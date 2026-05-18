@@ -1,4 +1,4 @@
-"""Output and serialization helpers for QFw-IQM scripts."""
+"""Output and serialization helpers for hardware test scripts."""
 
 from __future__ import annotations
 
@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 import json
-
-from qfw_iqm_util.qhw import QHW_IQM_DEVICE_ID_KEY, QHW_IQM_KIND_KEY
-from qfw_iqm_util.qhw import write_qhw_iqm_json
 
 RAW_IQM_KEY = "_raw_iqm"
 
@@ -48,7 +45,7 @@ def strip_internal_keys(value: Any) -> Any:
 		return {
 			key: strip_internal_keys(item)
 			for key, item in value.items()
-			if key not in (QHW_IQM_KIND_KEY, QHW_IQM_DEVICE_ID_KEY)
+			if not key.startswith("_qhw_")
 		}
 	if isinstance(value, list):
 		return [strip_internal_keys(item) for item in value]
@@ -58,22 +55,11 @@ def strip_internal_keys(value: Any) -> Any:
 def write_json(path: Path, data: Any) -> None:
 	path.parent.mkdir(parents=True, exist_ok=True)
 	payload = to_jsonable(data)
-	qhw_kind = None
-	qhw_device_id = None
-	if isinstance(payload, dict):
-		qhw_kind = payload.pop(QHW_IQM_KIND_KEY, None)
-		qhw_device_id = payload.pop(QHW_IQM_DEVICE_ID_KEY, None)
 	if isinstance(payload, dict) and RAW_IQM_KEY in payload:
 		raw_payload = payload.pop(RAW_IQM_KEY)
 		raw_path = path.with_suffix(".raw.json")
 		raw_path.write_text(json.dumps(
 			raw_payload, indent=2, sort_keys=True))
-		if qhw_kind:
-			write_qhw_iqm_json(
-				path.with_suffix(".qhw.json"),
-				qhw_kind,
-				raw_payload,
-				qhw_device_id)
 	payload = strip_internal_keys(payload)
 	path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
@@ -121,8 +107,7 @@ def write_backend_result_artifacts(path: Path, data: Any) -> dict[str, str]:
 		return files
 
 	raise ValueError(
-		"backend circuit results must include raw provider data and a "
-		"normalized qhw_result")
+		"backend circuit results must include a normalized qhw_result")
 
 
 def script_output_path(paths: RunPaths, json_mode: bool) -> Path:

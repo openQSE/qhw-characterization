@@ -1,0 +1,136 @@
+default-level: l1
+
+levels:
+  - name: smoke
+    description: Environment check, discovery, and one smoke submission.
+  - name: l1
+    description: Smoke plus short timing-overhead and 1Q timing sweeps.
+  - name: l2
+    description: Smoke plus broader timing-overhead and 1Q timing sweeps.
+
+tests:
+  - name: env_check
+    level: smoke
+    script: scripts/env_check.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+
+  - name: discover
+    level: smoke
+    script: scripts/discover.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+
+  - name: submit_smoke
+    level: smoke
+    script: scripts/submit_smoke.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+
+  - name: timing_overhead
+    level: l1
+    script: scripts/timing_overhead.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      l1:
+        - --shots-sweep
+        - env: QHW_RUN_ALL_OVERHEAD_SHOTS_SWEEP
+          default: 1,10,100
+        - --batch-sweep
+        - env: QHW_RUN_ALL_OVERHEAD_BATCH_SWEEP
+          default: 1,2
+        - --batch-shots
+        - env: QHW_RUN_ALL_OVERHEAD_BATCH_SHOTS
+          default: "100"
+        - --widths
+        - env: QHW_RUN_ALL_OVERHEAD_WIDTHS
+          default: "1"
+        - --repetitions
+        - env: QHW_RUN_ALL_OVERHEAD_REPETITIONS
+          default: "1"
+      l2:
+        - --shots-sweep
+        - env: QHW_RUN_ALL_OVERHEAD_SHOTS_SWEEP
+          default: 1,10,100,1000
+        - --batch-sweep
+        - env: QHW_RUN_ALL_OVERHEAD_BATCH_SWEEP
+          default: 1,2,4
+        - --batch-shots
+        - env: QHW_RUN_ALL_OVERHEAD_BATCH_SHOTS
+          default: "100"
+        - --widths
+        - env: QHW_RUN_ALL_OVERHEAD_WIDTHS
+          default: 1,2,4
+        - --repetitions
+        - env: QHW_RUN_ALL_OVERHEAD_REPETITIONS
+          default: "1"
+
+  - name: timing_1q
+    level: l1
+    script: scripts/timing_1q.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      l1:
+        - --qubits
+        - env: QHW_RUN_ALL_1Q_QUBITS
+          default: QB1
+        - --gates
+        - env: QHW_RUN_ALL_1Q_GATES
+          default: rx
+        - --depths
+        - env: QHW_RUN_ALL_1Q_DEPTHS
+          default: 1,2
+        - --shots
+        - env: QHW_RUN_ALL_1Q_SHOTS
+          default: "100"
+        - --repetitions
+        - env: QHW_RUN_ALL_1Q_REPETITIONS
+          default: "1"
+      l2:
+        - --qubits
+        - env: QHW_RUN_ALL_1Q_QUBITS
+          default: all
+        - --gates
+        - env: QHW_RUN_ALL_1Q_GATES
+          default: x,rx,ry
+        - --depths
+        - env: QHW_RUN_ALL_1Q_DEPTHS
+          default: 1,2,4,8,16,32,64,128
+        - --shots
+        - env: QHW_RUN_ALL_1Q_SHOTS
+          default: "100"
+        - --repetitions
+        - env: QHW_RUN_ALL_1Q_REPETITIONS
+          default: "1"

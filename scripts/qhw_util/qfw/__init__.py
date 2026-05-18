@@ -1,0 +1,1 @@
+"""QFw backend adapter support."""
