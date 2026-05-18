@@ -650,9 +650,61 @@ qhw_init "$@"
 qhw_run_single "scripts/new_workflow.py" "$@"
 ```
 
-The Python script should add the common backend option with
-`add_common_arguments(parser)` and construct the backend with
-`get_backend_from_args(args)`.
+The Python script should use `WorkflowContext` from
+`scripts/qhw_util/workflow.py` unless it needs unusual control over backend
+setup or artifact writing. A minimal Qiskit-authored workflow looks like:
+
+```python
+#!/usr/bin/env python3
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from qhw_util.workflow import WorkflowContext
+
+
+def add_script_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--shots", type=int, default=100)
+
+
+def build_circuit():
+    from qiskit import QuantumCircuit
+
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    return circuit
+
+
+def main() -> int:
+    ctx = WorkflowContext.from_cli(
+        __file__,
+        description="Describe the workflow.",
+        add_args=add_script_args,
+        calibration=True,
+        execution=True,
+    )
+    run = ctx.run_circuit(
+        build_circuit(),
+        name="result",
+        qasm_name="new_workflow",
+        shots=ctx.args.shots,
+    )
+    return ctx.finish({
+        "ok": run.ok,
+        "backend_mode": ctx.backend_name,
+        "job_id": run.job_id,
+        "counts": run.counts,
+        "files": run.files,
+    }, ok=run.ok)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
 
 Characterization workflows should prefer Qiskit-authored circuits so direct
 and QFw runs exercise the same BackendV2 execution path.

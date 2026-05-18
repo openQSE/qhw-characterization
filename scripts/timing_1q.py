@@ -15,19 +15,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from qhw_util.args import add_common_arguments
-from qhw_util.backend import get_backend_from_args
 from qhw_util.output import backend_result_qhw
-from qhw_util.output import create_run_paths
-from qhw_util.output import render_json_output
-from qhw_util.output import render_text_output
-from qhw_util.output import script_output_path
 from qhw_util.output import to_jsonable
-from qhw_util.output import write_backend_result_artifacts
-from qhw_util.output import write_json
-from qhw_util.output import write_script_output
-from qhw_util.qiskit_exec import write_qasm2_artifact
 from qhw_util.schema import qhw_device_qubits
+from qhw_util.workflow import WorkflowContext
 
 SUPPORTED_GATES = ("x", "rx", "ry")
 PRIMARY_METRIC = "execution_per_shot_seconds"
@@ -642,20 +633,6 @@ def render_analysis_markdown(analysis: dict[str, Any]) -> str:
 	return "\n".join(lines) + "\n"
 
 
-def run_case(backend, circuit, args, cid: str, qubit: str, dry_run: bool):
-	if dry_run:
-		return dry_run_result(cid, args.shots)
-	job = backend.run(
-		[circuit],
-		shots=args.shots,
-		calibration_set_id=args.calibration_set_id,
-		timeout=args.timeout,
-		use_timeslot=args.use_timeslot,
-		qubit_mapping={0: qubit},
-	)
-	return to_jsonable(job.result(timeout=args.timeout))
-
-
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
 	path.parent.mkdir(parents=True, exist_ok=True)
 	text = "\n".join(
@@ -666,12 +643,7 @@ def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
 	path.write_text(text)
 
 
-def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(
-		description=(
-			"Measure single-qubit gate timing with Qiskit-authored "
-			"circuits."),
-	)
+def add_script_args(parser: argparse.ArgumentParser) -> None:
 	parser.add_argument("--qubits", default="all")
 	parser.add_argument("--gates", type=parse_gate_list,
 			    default=parse_gate_list("rx,ry"))
@@ -680,36 +652,41 @@ def parse_args() -> argparse.Namespace:
 	parser.add_argument("--shots", type=int, default=100)
 	parser.add_argument("--repetitions", type=int, default=1)
 	parser.add_argument("--angle", type=parse_angle, default=math.pi)
-	add_common_arguments(
-		parser, calibration=True, execution=True, dry_run=True)
-	return parser.parse_args()
 
 
 def main() -> int:
-	args = parse_args()
+	ctx = WorkflowContext.from_cli(
+		__file__,
+		description=(
+			"Measure single-qubit gate timing with Qiskit-authored "
+			"circuits."),
+		add_args=add_script_args,
+		calibration=True,
+		execution=True,
+		dry_run=True,
+	)
+	args = ctx.args
 	if args.shots < 1:
 		raise ValueError("--shots must be at least 1")
 	if args.repetitions < 1:
 		raise ValueError("--repetitions must be at least 1")
 
-	paths = create_run_paths(__file__, args.output_dir, args.run_id)
-	backend = None if args.dry_run else get_backend_from_args(args)
 	backend_info = {} if args.dry_run else to_jsonable(
-		backend.get_backend_info())
+		ctx.backend.get_backend_info())
 	device_info = {} if args.dry_run else to_jsonable(
-		backend.get_device_info())
+		ctx.backend.get_device_info())
 	active_qubits = qhw_device_qubits(device_info)
 	qubits = resolve_qubits(args.qubits, active_qubits, args.dry_run)
 
-	backend_info_file = paths.root / "backend_info.json"
-	device_info_file = paths.root / "device_info.json"
-	records_file = paths.results / "timing_records.jsonl"
-	summary_file = paths.results / "timing_summary.json"
-	analysis_file = paths.results / "analysis.json"
-	analysis_md_file = paths.results / "analysis.md"
-	plots_dir = paths.results / "plots"
-	write_json(backend_info_file, backend_info)
-	write_json(device_info_file, device_info)
+	backend_info_file = ctx.paths.root / "backend_info.json"
+	device_info_file = ctx.paths.root / "device_info.json"
+	records_file = ctx.paths.results / "timing_records.jsonl"
+	summary_file = ctx.paths.results / "timing_summary.json"
+	analysis_file = ctx.paths.results / "analysis.json"
+	analysis_md_file = ctx.paths.results / "analysis.md"
+	plots_dir = ctx.paths.results / "plots"
+	ctx.write_json(backend_info_file, backend_info)
+	ctx.write_json(device_info_file, device_info)
 
 	records = []
 	for repetition in range(args.repetitions):
@@ -721,24 +698,31 @@ def main() -> int:
 						f"s{args.shots}_r{repetition}")
 					circuit = build_gate_circuit(
 						gate, depth, args.angle, cid)
-					qasm_file = paths.circuits / f"{cid}.qasm"
-					result_file = paths.results / f"{cid}.json"
-					write_qasm2_artifact(circuit, qasm_file)
 
 					start = time.monotonic()
 					try:
-						result = run_case(
-							backend, circuit, args, cid,
-							qubit, args.dry_run)
-						ok = result.get("rc") == 0
+						if args.dry_run:
+							qasm_files = ctx.write_qasm_artifacts(
+								[circuit], cid)
+							result = dry_run_result(cid, args.shots)
+							run = ctx.write_backend_result(
+								cid, result, qasm_files)
+						else:
+							run = ctx.run_circuit(
+								[circuit],
+								name=cid,
+								shots=args.shots,
+								qubit_mapping={0: qubit},
+							)
+							result = run.result
+						ok = run.ok
 						error = None
 					except Exception as exc:
 						result = {"rc": 1, "error": str(exc)}
+						run = None
 						ok = False
 						error = str(exc)
 					wall = time.monotonic() - start
-					result_files = write_backend_result_artifacts(
-						result_file, result)
 					qhw_result = backend_result_qhw(result)
 					qhw_payload = qhw_result.get("result", {})
 
@@ -754,19 +738,20 @@ def main() -> int:
 						"depth": depth,
 						"shots": args.shots,
 						"backend_mode": args.backend if args.dry_run
-						else backend.name,
+						else ctx.backend.name,
 						"source": "qiskit",
 						"submission_path": "backend.run",
 						"qubit_mapping": {"0": qubit},
-						"qasm_file": str(qasm_file),
-						"result_file": result_files.get("qhw"),
-						"raw_result_file": result_files.get("raw"),
-						"normalized_result_file": result_files.get("qhw"),
-						"job_ids": result_job_ids(result),
+						"qasm_file": run.files.get("qasm") if run else None,
+						"result_file": run.files.get("result") if run else None,
+						"raw_result_file": run.files.get("raw_result") if run else None,
+						"normalized_result_file": (
+							run.files.get("normalized_result") if run else None),
+						"job_ids": result_job_ids(result) if run else [],
 						"counts": qhw_payload.get("counts")
 						if isinstance(qhw_payload, dict) else None,
 						"metrics": extract_metrics(
-							wall, result, args.shots),
+							wall, result, args.shots) if run else {},
 					})
 
 	write_jsonl(records_file, records)
@@ -783,15 +768,15 @@ def main() -> int:
 	fits = build_fits(records)
 	plots = plot_records(records, plots_dir)
 	analysis = build_analysis(records, config, plots)
-	write_json(analysis_file, analysis)
+	ctx.write_json(analysis_file, analysis)
 	analysis_md_file.write_text(render_analysis_markdown(analysis))
 
 	summary = {
 		"ok": all(record["ok"] for record in records),
-		"run_id": paths.run_id,
-		"date_id": paths.date_id,
-		"output_dir": str(paths.root),
-		"backend_mode": args.backend if args.dry_run else backend.name,
+		"run_id": ctx.paths.run_id,
+		"date_id": ctx.paths.date_id,
+		"output_dir": str(ctx.paths.root),
+		"backend_mode": ctx.backend_name,
 		"dry_run": args.dry_run,
 		"config": config,
 		"record_count": len(records),
@@ -814,27 +799,19 @@ def main() -> int:
 			"plots": str(plots_dir),
 		},
 	}
-	summary["files"]["script_output"] = str(
-		script_output_path(paths, args.json))
-	write_json(summary_file, summary)
+	summary["files"]["script_output"] = str(ctx.script_output_file)
+	ctx.write_json(summary_file, summary)
 
-	if args.json:
-		output = render_json_output(summary)
-	else:
-		lines = [
-			f"run id: {summary['run_id']}",
-			f"output dir: {summary['output_dir']}",
-			f"backend: {summary['backend_mode']}",
-			f"records: {summary['record_count']}",
-			f"failed records: {summary['failed_record_count']}",
-		]
-		for name, path in summary["files"].items():
-			lines.append(f"{name}: {path}")
-		output = render_text_output(lines)
-	write_script_output(paths, output, args.json)
-
-	rc = 0 if summary["ok"] else 2
-	return rc if args.dry_run else backend.finish(rc)
+	lines = [
+		f"run id: {ctx.paths.run_id}",
+		f"output dir: {ctx.paths.root}",
+		f"backend: {summary['backend_mode']}",
+		f"records: {summary['record_count']}",
+		f"failed records: {summary['failed_record_count']}",
+	]
+	for name, path in summary["files"].items():
+		lines.append(f"{name}: {path}")
+	return ctx.finish(summary, ok=summary["ok"], text_lines=lines)
 
 
 if __name__ == "__main__":
