@@ -26,9 +26,9 @@ export QFW_API_KEY="<api-key>"
 Optional IQM settings:
 
 ```bash
-export QHW_QUANTUM_COMPUTER="<machine-name>"
-export QHW_REQUEST_TIMEOUT=30
-export QHW_JOB_TIMEOUT=300
+export QHW_IQM_QUANTUM_COMPUTER="<machine-name>"
+export QHW_IQM_REQUEST_TIMEOUT=30
+export QHW_IQM_JOB_TIMEOUT=300
 ```
 
 For direct execution without QFw:
@@ -362,9 +362,9 @@ It reads:
 
 - `QFW_QC_URL`
 - `QFW_API_KEY`
-- optional `QHW_QUANTUM_COMPUTER`
-- optional `QHW_REQUEST_TIMEOUT`
-- optional `QHW_JOB_TIMEOUT`
+- optional `QHW_IQM_QUANTUM_COMPUTER`
+- optional `QHW_IQM_REQUEST_TIMEOUT`
+- optional `QHW_IQM_JOB_TIMEOUT`
 
 For metadata operations, it calls the IQM client APIs directly and writes the
 raw data into JSON-friendly structures. For Qiskit-authored circuits, it
