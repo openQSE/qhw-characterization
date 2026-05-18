@@ -18,7 +18,6 @@ from qhw_util.iqm.qhw import normalize_iqm_payload, qhw_device_id
 from qhw_util.output import to_jsonable
 from qhw_util.qiskit_exec import optional_attr_data
 
-REQUIRED_ENV = ("QFW_QC_URL", "QFW_API_KEY")
 DEFAULT_REQUEST_TIMEOUT = 30.0
 DEFAULT_JOB_TIMEOUT = 300.0
 
@@ -50,15 +49,29 @@ def get_env_float(name: str, default: float) -> float:
 		raise RuntimeError(f"{name} must be a float: {value!r}") from exc
 
 
+def get_first_env(names: tuple[str, ...]) -> str | None:
+	for name in names:
+		value = os.environ.get(name)
+		if value:
+			return value.strip()
+	return None
+
+
 def load_env() -> EnvConfig:
-	missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+	url = get_first_env(("QHW_IQM_URL", "QFW_QC_URL"))
+	api_key = get_first_env(("QHW_IQM_API_KEY", "QFW_API_KEY"))
+	missing = []
+	if not url:
+		missing.append("QHW_IQM_URL or QFW_QC_URL")
+	if not api_key:
+		missing.append("QHW_IQM_API_KEY or QFW_API_KEY")
 	if missing:
 		raise RuntimeError(
-			"missing required IQM environment variable(s): "
+			"missing required IQM environment setting(s): "
 			f"{', '.join(missing)}")
 	return EnvConfig(
-		url=os.environ["QFW_QC_URL"].strip(),
-		api_key=os.environ["QFW_API_KEY"].strip(),
+		url=url,
+		api_key=api_key,
 		quantum_computer=os.environ.get("QHW_IQM_QUANTUM_COMPUTER"),
 	)
 
