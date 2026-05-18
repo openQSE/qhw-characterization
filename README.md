@@ -292,6 +292,7 @@ The wrapper still forwards metadata and lower-level debugging operations to
 the selected backend profile:
 
 - `get_backend_info()`
+- `get_device_info()`
 - `get_dynamic_backend_info(calibration_set_id=None)`
 - `get_calibration_snapshot(calibration_set_id=None)`
 - `get_coupling_graph(calibration_set_id=None)`
@@ -301,8 +302,10 @@ the selected backend profile:
 
 Workflows should use these methods rather than importing QFw, DEFw, or
 `iqm-client` directly. Metadata-only workflows use the metadata methods.
-OpenQASM debugging workflows use `sync_run` or `sync_run_many`. Qiskit-authored
-workflows use `backend.run(...).result(...)`.
+Device, calibration, and coupling calls return normalized `qhw-data` schema
+records in both direct and QFw mode. OpenQASM debugging workflows use
+`sync_run` or `sync_run_many`. Qiskit-authored workflows use
+`backend.run(...).result(...)`.
 
 ### Result Normalization
 

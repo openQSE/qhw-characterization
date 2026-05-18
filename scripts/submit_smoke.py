@@ -38,7 +38,7 @@ def build_smoke_circuit(flip: bool):
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Run a minimal IQM circuit authored with Qiskit.",
+		description="Run a minimal hardware circuit authored with Qiskit.",
 	)
 	parser.add_argument("--shots", type=int, default=100)
 	parser.add_argument("--flip", action="store_true")

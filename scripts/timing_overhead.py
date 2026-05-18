@@ -25,6 +25,7 @@ from qhw_util.output import write_backend_result_artifacts
 from qhw_util.output import write_json
 from qhw_util.output import write_script_output
 from qhw_util.qiskit_exec import write_qasm2_artifact
+from qhw_util.schema import qhw_device_qubits
 
 
 def dry_run_result(cid: str, shots: int, num_circuits: int) -> dict[str, Any]:
@@ -219,7 +220,8 @@ def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description=(
-			"Measure IQM fixed overhead, shot scaling, and batch scaling."),
+			"Measure hardware fixed overhead, shot scaling, and "
+			"batch scaling."),
 	)
 	parser.add_argument("--shots-sweep", type=parse_int_list,
 			    default=parse_int_list("1,10,100,1000"))
@@ -244,13 +246,17 @@ def main() -> int:
 	backend = None if args.dry_run else get_backend_from_args(args)
 	backend_info = {} if args.dry_run else to_jsonable(
 		backend.get_backend_info())
-	active_qubits = backend_info.get("active_qubits", [])
+	device_info = {} if args.dry_run else to_jsonable(
+		backend.get_device_info())
+	active_qubits = qhw_device_qubits(device_info)
 	widths = resolve_widths(args.widths, active_qubits, args.dry_run)
 
 	backend_info_file = paths.root / "backend_info.json"
+	device_info_file = paths.root / "device_info.json"
 	records_file = paths.results / "timing_records.jsonl"
 	summary_file = paths.results / "timing_summary.json"
 	write_json(backend_info_file, backend_info)
+	write_json(device_info_file, device_info)
 
 	records = []
 	for repetition in range(args.repetitions):
@@ -365,6 +371,7 @@ def main() -> int:
 		"fits": build_fits(records),
 		"files": {
 			"backend_info": str(backend_info_file),
+			"device_info": str(device_info_file),
 			"timing_records": str(records_file),
 			"timing_summary": str(summary_file),
 		},

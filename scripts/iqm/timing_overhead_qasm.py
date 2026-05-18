@@ -22,6 +22,7 @@ from qhw_util.output import script_output_path
 from qhw_util.output import to_jsonable
 from qhw_util.output import write_json
 from qhw_util.output import write_script_output
+from qhw_util.schema import qhw_device_qubits
 
 
 def parse_int_list(value: str) -> list[int]:
@@ -252,13 +253,17 @@ def main() -> int:
 	backend = None if args.dry_run else get_backend_from_args(args)
 	backend_info = {} if args.dry_run else to_jsonable(
 		backend.get_backend_info())
-	active_qubits = backend_info.get("active_qubits", [])
+	device_info = {} if args.dry_run else to_jsonable(
+		backend.get_device_info())
+	active_qubits = qhw_device_qubits(device_info)
 	widths = resolve_widths(args.widths, active_qubits, args.dry_run)
 
 	backend_info_file = paths.root / "backend_info.json"
+	device_info_file = paths.root / "device_info.json"
 	records_file = paths.results / "timing_records.jsonl"
 	summary_file = paths.results / "timing_summary.json"
 	write_json(backend_info_file, backend_info)
+	write_json(device_info_file, device_info)
 
 	records = []
 	for repetition in range(args.repetitions):
@@ -368,6 +373,7 @@ def main() -> int:
 		"fits": build_fits(records),
 		"files": {
 			"backend_info": str(backend_info_file),
+			"device_info": str(device_info_file),
 			"timing_records": str(records_file),
 			"timing_summary": str(summary_file),
 		},

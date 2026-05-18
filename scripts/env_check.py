@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate access to an IQM backend."""
+"""Validate access to a hardware backend."""
 
 from __future__ import annotations
 
@@ -19,17 +19,25 @@ from qhw_util.output import script_output_path
 from qhw_util.output import to_jsonable
 from qhw_util.output import write_json
 from qhw_util.output import write_script_output
+from qhw_util.schema import qhw_device_summary
 
 
-def summarize_backend(info: dict[str, Any]) -> dict[str, Any]:
-	static_arch = info.get("static_architecture", {})
-	return {
+def summarize_backend(info: dict[str, Any],
+		      device_info: dict[str, Any]) -> dict[str, Any]:
+	device_summary = qhw_device_summary(device_info)
+	summary = {
 		"backend": info.get("backend"),
 		"metadata_supported": info.get("metadata_supported"),
-		"name": static_arch.get("name") or static_arch.get("dut_label"),
-		"active_qubits": info.get("active_qubits", []),
-		"calibration_set_id": info.get("calibration_set_id"),
+		"name": device_summary.get("name"),
+		"active_qubits": device_summary.get("active_qubits", []),
+		"calibration_set_id": device_summary.get("calibration_set_id"),
+		"device": device_summary,
 	}
+	if not summary["name"]:
+		static_arch = info.get("static_architecture", {})
+		summary["name"] = static_arch.get("name") or static_arch.get(
+			"dut_label")
+	return summary
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,10 +57,12 @@ def main() -> int:
 		"ok": True,
 		"backend_mode": backend.name,
 		"backend_info": to_jsonable(backend.get_backend_info()),
+		"device_info": to_jsonable(backend.get_device_info()),
 		"dynamic_backend_info": to_jsonable(
 			backend.get_dynamic_backend_info(args.calibration_set_id)),
 	}
-	result["summary"] = summarize_backend(result["backend_info"])
+	result["summary"] = summarize_backend(
+		result["backend_info"], result["device_info"])
 
 	output_file = paths.root / "env_check.json"
 	write_json(output_file, result)
