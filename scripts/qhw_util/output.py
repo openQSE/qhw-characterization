@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 import json
 
-RAW_IQM_KEY = "_raw_iqm"
+RAW_PROVIDER_KEY = "_raw_provider"
 
 
 @dataclass(frozen=True)
@@ -55,8 +55,8 @@ def strip_internal_keys(value: Any) -> Any:
 def write_json(path: Path, data: Any) -> None:
 	path.parent.mkdir(parents=True, exist_ok=True)
 	payload = to_jsonable(data)
-	if isinstance(payload, dict) and RAW_IQM_KEY in payload:
-		raw_payload = payload.pop(RAW_IQM_KEY)
+	if isinstance(payload, dict) and RAW_PROVIDER_KEY in payload:
+		raw_payload = payload.pop(RAW_PROVIDER_KEY)
 		raw_path = path.with_suffix(".raw.json")
 		raw_path.write_text(json.dumps(
 			raw_payload, indent=2, sort_keys=True))
@@ -81,7 +81,7 @@ def backend_result_raw(data: Any) -> dict[str, Any]:
 	payload = to_jsonable(data)
 	if not isinstance(payload, dict):
 		return {}
-	raw_payload = payload.get(RAW_IQM_KEY)
+	raw_payload = payload.get(RAW_PROVIDER_KEY)
 	return raw_payload if isinstance(raw_payload, dict) else {}
 
 

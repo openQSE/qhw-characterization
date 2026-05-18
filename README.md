@@ -312,7 +312,7 @@ All Qiskit-authored workflows return the same artifact shape:
 
 ```text
 record["result"]["qhw_result"]  # normalized qhw-result-v1
-record["_raw_iqm"]              # raw provider payload for direct IQM mode
+record["_raw_provider"]         # raw provider payload for direct mode
 ```
 
 Direct IQM mode assumes the provider returns native or Qiskit-native IQM data.

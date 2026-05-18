@@ -526,7 +526,7 @@ class DirectIQMBackend:
 			"calibration_set_id": dynamic.get("calibration_set_id"),
 			"qhw_device": self._normalize_qhw("device", raw_payload),
 			**self._qhw_tags("device"),
-			"_raw_iqm": raw_payload,
+			"_raw_provider": raw_payload,
 		}
 
 	def get_device_info(self):
@@ -545,7 +545,7 @@ class DirectIQMBackend:
 			"backend": "iqm-direct",
 			"metadata_supported": True,
 			"dynamic_architecture": dynamic,
-			"_raw_iqm": {
+			"_raw_provider": {
 				"dynamic_architecture": dynamic,
 			},
 		}
@@ -705,7 +705,7 @@ class DirectIQMBackend:
 				},
 			},
 			**self._qhw_tags("result"),
-			"_raw_iqm": raw_payload,
+			"_raw_provider": raw_payload,
 			"rc": 0,
 		}
 
@@ -770,7 +770,7 @@ class DirectIQMBackend:
 		record.setdefault("result", {})["qhw_result"] = qhw_result
 		self._apply_qhw_timing(record, qhw_result)
 		record.update(self._qhw_tags("result"))
-		record["_raw_iqm"] = raw_payload
+		record["_raw_provider"] = raw_payload
 		return record
 
 	def _apply_qhw_timing(self, record, qhw_result):
