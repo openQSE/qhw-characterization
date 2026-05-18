@@ -35,7 +35,9 @@ For direct execution without QFw:
 
 - The `iqm-client` Python package and its IQM dependencies.
 - The local `qhw-iqm` and `qhw-data` packages for normalized artifacts.
-- `QFW_QC_URL` and `QFW_API_KEY` exported in the shell.
+- `QHW_IQM_URL` and `QHW_IQM_API_KEY` exported in the shell. The direct IQM
+  backend also accepts `QFW_QC_URL` and `QFW_API_KEY` as fallbacks so the same
+  shell can be used for QFw-backed and direct runs.
 
 Install the local Python requirements from this repository root:
 
@@ -360,8 +362,8 @@ standalone implementation used when QFw is not involved.
 
 It reads:
 
-- `QFW_QC_URL`
-- `QFW_API_KEY`
+- `QHW_IQM_URL`, falling back to `QFW_QC_URL`
+- `QHW_IQM_API_KEY`, falling back to `QFW_API_KEY`
 - optional `QHW_IQM_QUANTUM_COMPUTER`
 - optional `QHW_IQM_REQUEST_TIMEOUT`
 - optional `QHW_IQM_JOB_TIMEOUT`
@@ -627,9 +629,10 @@ QFw's allocation abstraction can map both groups to the same node.
 
 In direct mode, the shell wrappers do not call `qfw_setup.sh`, `qfw_srun.sh`,
 or `qfw_teardown.sh`. They execute the Python workflow locally and use
-`iqm-client` with `QFW_QC_URL` and `QFW_API_KEY`. This mode is useful for
-early machine characterization and for sharing the scripts with users who do
-not have QFw installed.
+`iqm-client` with `QHW_IQM_URL` and `QHW_IQM_API_KEY`. If those direct-mode
+variables are absent, the direct backend falls back to `QFW_QC_URL` and
+`QFW_API_KEY`. This keeps QFw service startup compatible while allowing
+standalone runs to use provider-scoped names.
 
 ## Adding Workflows
 
