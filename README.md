@@ -303,8 +303,7 @@ the selected backend profile:
 Workflows should use these methods rather than importing QFw, DEFw, or
 `iqm-client` directly. Metadata-only workflows use the metadata methods.
 Device, calibration, and coupling calls return normalized `qhw-data` schema
-records in both direct and QFw mode. OpenQASM debugging workflows use
-`sync_run` or `sync_run_many`. Qiskit-authored workflows use
+records in both direct and QFw mode. Qiskit-authored workflows use
 `backend.run(...).result(...)`.
 
 ### Result Normalization
@@ -342,8 +341,7 @@ It reads:
 For metadata operations, it calls the IQM client APIs directly and writes the
 raw data into JSON-friendly structures. For Qiskit-authored circuits, it
 creates an IQM Qiskit backend and lets the common `BackendWrapper` execute the
-run. For lower-level `_qasm.py` workflows, it can build native IQM circuit
-objects from the OpenQASM input and submit them through the IQM client.
+run.
 
 The direct backend is useful for early machine acceptance, service isolation,
 and debugging. It should remain thin enough that it does not become a second
@@ -388,12 +386,10 @@ The suite intentionally contains more than one workflow style:
   Qiskit-authored circuit to confirm that execution and result retrieval work.
 - Timing workflows: `timing_overhead.py` and `timing_1q.py` submit
   Qiskit-authored circuits and post-process timing telemetry.
-- OpenQASM examples: `*_qasm.py` scripts are retained as lower-level debugging
-  examples and are not the preferred path for new characterization tests.
 
 The preferred direction is Qiskit-authored characterization workflows. The
-QASM scripts are useful when testing native request handling, but they should
-not be copied as the default pattern for new tests.
+suite does not keep direct OpenQASM workflows because they bypass the common
+BackendV2 path used by direct and QFw execution.
 
 For Qiskit-authored workflows, the backend mode changes only backend
 construction and result extraction. The script still builds the same Qiskit
@@ -402,12 +398,11 @@ circuit and calls the same wrapper API.
 ### Shared Output And Timing
 
 `scripts/qhw_util/output.py` owns the output tree and JSON serialization.
-`scripts/qhw_util/timing.py` converts IQM timeline events into duration
-fields. Direct IQM circuit executions write two primary per-case artifacts:
-the provider-native payload as `*.raw.json` and the provider-neutral
+Direct IQM circuit executions write two primary per-case artifacts: the
+provider-native payload as `*.raw.json` and the provider-neutral
 `qhw-result-v1` payload as `*.qhw.json`. The scripts use the normalized qhw
 payload for timing analysis so the output does not depend on a private
-qhw workflow format.
+workflow timing format.
 
 This keeps each workflow focused on the experiment design:
 
@@ -566,46 +561,6 @@ Typical use:
     --json
 ```
 
-### `scripts/iqm/submit_smoke_qasm.py`
-
-`submit_smoke_qasm.py` is a lower-level version of the smoke test that
-constructs OpenQASM directly instead of authoring the circuit with Qiskit. It
-submits a one-qubit measurement circuit through the selected backend using the
-backend `sync_run` path. It supports `--flip`, `--shots`, `--qubit`,
-`--calibration-set-id`, `--timeout`, and `--use-timeslot`.
-
-This script is kept as an explicit OpenQASM example and as a debugging path for
-the native request format. New characterization tests should usually prefer
-`submit_smoke.py` so that circuit construction goes through Qiskit.
-
-Typical use:
-
-```bash
-python3 scripts/iqm/submit_smoke_qasm.py --backend direct --shots 100 --json
-```
-
-### `scripts/iqm/timing_overhead_qasm.py`
-
-`timing_overhead_qasm.py` is the direct-OpenQASM counterpart to
-`timing_overhead.py`. It builds measurement circuits as QASM strings,
-submits them through `sync_run` or `sync_run_many`, and records the same style
-of per-job timing output and summary fits. It supports the same timing sweep
-controls as the Qiskit timing script, plus `--qubit` for one-qubit mapped runs.
-
-This script is useful when the native OpenQASM request path itself needs to be
-debugged or compared against the Qiskit-authored workflow. For general timing
-campaigns, use `timing_overhead.py`.
-
-Typical use:
-
-```bash
-python3 scripts/iqm/timing_overhead_qasm.py \
-    --backend direct \
-    --shots-sweep 1,10,100 \
-    --batch-sweep 1,2 \
-    --json
-```
-
 ## Helper Modules
 
 The `scripts/qhw_util/` package contains shared implementation code used
@@ -614,7 +569,7 @@ by the workflow scripts. These files are not meant to be run directly.
 | Module | Role |
 | --- | --- |
 | `backend.py` | Parses `--backend`, creates `BackendWrapper`, runs the common Qiskit `backend.run()` and `job.result()` flow, and delegates result normalization/extraction. |
-| `iqm/backend.py` | Implements the direct IQM profile, including IQM client metadata queries, IQM Qiskit backend construction, direct QASM submission, and direct-result qhw normalization. |
+| `iqm/backend.py` | Implements the direct IQM profile, including IQM client metadata queries, IQM Qiskit backend construction, and direct-result qhw normalization. |
 | `qfw/backend.py` | Implements the QFw profile, including QFw Qiskit backend construction and extraction of service-normalized qhw results. |
 | `output.py` | Creates the `data/<date>/<script>/<run>/` directory layout and writes JSON artifacts. |
 | `qhw.py` | Calls `qhw-iqm` to convert direct IQM raw payloads into provider-neutral `qhw-data` records. |
@@ -668,6 +623,5 @@ The Python script should add the common backend option with
 `add_common_arguments(parser)` and construct the backend with
 `get_backend_from_args(args)`.
 
-The `_qasm.py` scripts are retained as lower-level examples that build
-OpenQASM directly. Characterization workflows should prefer Qiskit-authored
-circuits unless they are explicitly testing OpenQASM handling.
+Characterization workflows should prefer Qiskit-authored circuits so direct
+and QFw runs exercise the same BackendV2 execution path.
