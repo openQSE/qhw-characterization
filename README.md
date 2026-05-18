@@ -620,7 +620,6 @@ by the workflow scripts. These files are not meant to be run directly.
 | `qhw.py` | Calls `qhw-iqm` to convert direct IQM raw payloads into provider-neutral `qhw-data` records. |
 | `qfw.py` | Reserves the IQM QPM service and exits the QFw application cleanly. |
 | `qiskit_exec.py` | Contains Qiskit record-building helpers, QASM artifact writing, count extraction, metadata extraction, and timing summary propagation. |
-| `timing.py` | Converts IQM job timeline events into duration fields used by smoke and timing reports. |
 
 ## QFw Execution Model
 

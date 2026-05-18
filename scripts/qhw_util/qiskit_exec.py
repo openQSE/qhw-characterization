@@ -8,7 +8,6 @@ from typing import Any
 import time
 
 from qhw_util.output import to_jsonable
-from qhw_util.timing import build_timing_summary
 
 
 def ensure_circuit_list(circuits):
@@ -85,27 +84,6 @@ def optional_attr_data(obj, attr_name: str) -> Any:
 	return to_jsonable(value)
 
 
-def _result_timeline_timing(result_dict: dict[str, Any],
-			    job_id: str | None,
-			    wall_seconds: float) -> dict[str, Any] | None:
-	timeline = result_dict.get("timeline")
-	if not timeline:
-		return None
-	record = {
-		"job": {
-			"id": job_id or result_dict.get("job_id"),
-			"status": result_dict.get("status"),
-			"data": {
-				"timeline": timeline,
-			},
-		},
-		"timing": {
-			"total_wall_seconds": wall_seconds,
-		},
-	}
-	return build_timing_summary(record)
-
-
 def _qfw_backend_metadata(result_dict: dict[str, Any]) -> list[dict[str, Any]]:
 	metadata = []
 	for experiment in result_dict.get("results", []) or []:
@@ -154,12 +132,7 @@ def _add_backend_timing(timing_summary: dict[str, Any],
 			result_dict: dict[str, Any],
 			job_id: str | None,
 			wall_seconds: float) -> None:
-	direct_timing = _result_timeline_timing(
-		result_dict, job_id, wall_seconds)
-	if direct_timing:
-		_set_timing_summary_backend_timing(timing_summary, direct_timing)
-		return
-
+	del job_id, wall_seconds
 	metadata = _qfw_backend_metadata(result_dict)
 	backend_summaries = _metadata_qhw_timings(metadata)
 	if not backend_summaries:

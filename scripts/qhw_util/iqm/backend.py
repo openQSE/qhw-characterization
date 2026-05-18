@@ -17,7 +17,6 @@ from qhw_util.iqm.qhw import QHW_IQM_DEVICE_ID_KEY, QHW_IQM_KIND_KEY
 from qhw_util.iqm.qhw import normalize_iqm_payload, qhw_device_id
 from qhw_util.output import to_jsonable
 from qhw_util.qiskit_exec import optional_attr_data
-from qhw_util.timing import build_timing_summary
 
 REQUIRED_ENV = ("QFW_QC_URL", "QFW_API_KEY")
 DEFAULT_REQUEST_TIMEOUT = 30.0
@@ -683,7 +682,6 @@ class DirectIQMBackend:
 				"measurement_counts": counts_data,
 			},
 		}
-		timing_summary = build_timing_summary(record)
 		raw_payload = {
 			"circuits": circuit_data,
 			"run_request": run_request_data,
@@ -703,7 +701,6 @@ class DirectIQMBackend:
 					"num_circuits": len(infos),
 					"counts_by_circuit": counts_by_circuit,
 					"measurement_counts": counts_data,
-					"timing_summary": timing_summary,
 					"metadata": record,
 				},
 			},

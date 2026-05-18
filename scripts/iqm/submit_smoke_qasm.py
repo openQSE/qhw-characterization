@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from qhw_util.args import add_common_arguments
 from qhw_util.backend import get_backend_from_args
+from qhw_util.output import backend_result_qhw
 from qhw_util.output import create_run_paths
 from qhw_util.output import render_json_output
 from qhw_util.output import render_text_output
@@ -18,7 +19,6 @@ from qhw_util.output import script_output_path
 from qhw_util.output import to_jsonable
 from qhw_util.output import write_json
 from qhw_util.output import write_script_output
-from qhw_util.timing import build_timing_summary
 
 
 def build_smoke_qasm(flip: bool) -> str:
@@ -76,10 +76,8 @@ def main() -> int:
 
 	payload = result.get("result", {})
 	iqm_payload = payload.get("iqm", {}) if isinstance(payload, dict) else {}
-	timing_summary = (
-		iqm_payload.get("timing_summary")
-		or build_timing_summary(iqm_payload.get("metadata", {}))
-	)
+	qhw_result = backend_result_qhw(result)
+	timing_summary = qhw_result.get("timing", {}) if qhw_result else {}
 	write_json(timing_file, timing_summary)
 
 	summary = {
