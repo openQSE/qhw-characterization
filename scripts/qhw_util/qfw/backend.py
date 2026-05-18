@@ -86,6 +86,9 @@ class QFwBackend:
 	def get_coupling_graph(self, calibration_set_id=None):
 		return self._service().get_coupling_graph(calibration_set_id)
 
+	def set_qubit_mapping(self, circuit, mapping):
+		return self.qiskit_backend().set_qubit_mapping(circuit, mapping)
+
 	def sync_run(self, info):
 		return self._service().sync_run(info)
 
@@ -118,8 +121,9 @@ class QFwBackend:
 		return self._qiskit_backend
 
 	def qiskit_run_options(self, shots: int, calibration_set_id=None,
-	    timeout=None, use_timeslot=False, extra_run_options=None):
-		del calibration_set_id, timeout, use_timeslot
+	    timeout=None, use_timeslot=False, qubit_mapping=None,
+	    extra_run_options=None):
+		del calibration_set_id, timeout, use_timeslot, qubit_mapping
 		options = {"shots": shots}
 		options.update(extra_run_options or {})
 		return options
@@ -134,6 +138,7 @@ class QFwBackend:
 				"calibration_set_id": context.get("calibration_set_id"),
 				"timeout_requested": context.get("timeout"),
 				"use_timeslot_requested": context.get("use_timeslot"),
+				"qubit_mapping": context.get("qubit_mapping"),
 			},
 		}
 

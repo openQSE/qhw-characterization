@@ -60,7 +60,6 @@ def dry_run_result(cid: str, shots: int) -> dict[str, Any]:
 				"raw": {"included": False, "format": None, "artifacts": []},
 			},
 		},
-		"_raw_iqm": {"dry_run": True, "cid": cid},
 		"rc": 0,
 	}
 
@@ -140,37 +139,6 @@ def build_gate_circuit(gate: str, depth: int, angle: float, name: str):
 			raise ValueError(f"unsupported gate {gate!r}")
 	circuit.measure(0, 0)
 	return circuit
-
-
-def native_gate_name(gate: str) -> str:
-	if gate in ("x", "rx", "ry"):
-		return "prx"
-	return gate
-
-
-def build_run_info(qasm: str, args: argparse.Namespace, cid: str,
-		   qubit: str, gate: str, depth: int) -> dict[str, Any]:
-	info = {
-		"cid": cid,
-		"qasm": qasm,
-		"num_qubits": 1,
-		"num_shots": args.shots,
-		"compiler": "qiskit-qasm2",
-		"timeout": args.timeout,
-		"use_timeslot": args.use_timeslot,
-		"iqm_qubit_mapping": {0: qubit},
-		"metadata": {
-			"source": "qiskit",
-			"experiment": "single_qubit_gate_timing",
-			"gate": gate,
-			"native_gate": native_gate_name(gate),
-			"depth": depth,
-			"physical_qubit": qubit,
-		},
-	}
-	if args.calibration_set_id:
-		info["calibration_set_id"] = args.calibration_set_id
-	return info
 
 
 def extract_metrics(script_wall_seconds: float, result: dict[str, Any],
@@ -303,7 +271,7 @@ def classify_fit(fit: dict[str, Any] | None) -> dict[str, Any]:
 		return {
 			"status": "insufficient_data",
 			"conclusion": (
-				"Fewer than two successful records contain IQM execution "
+				"Fewer than two successful records contain hardware execution "
 				"timing, so this group cannot answer the depth-scaling "
 				"question."),
 		}
@@ -319,7 +287,7 @@ def classify_fit(fit: dict[str, Any] | None) -> dict[str, Any]:
 	if delta_fraction < 0.05:
 		status = "no_depth_dependence_observed"
 		conclusion = (
-			"The IQM execution-time data does not show a clear "
+			"The hardware execution-time data does not show a clear "
 			"depth-dependent increase for this group. That can happen if "
 			"the timing telemetry is too coarse for this circuit family, "
 			"if the compiler optimized the repeated gates, or if the "
@@ -327,12 +295,12 @@ def classify_fit(fit: dict[str, Any] | None) -> dict[str, Any]:
 	elif fit["slope_seconds_per_gate"] > 0 and residual_fraction <= 0.2:
 		status = "approximately_linear_positive"
 		conclusion = (
-			"IQM execution time per shot increases approximately linearly "
+			"Hardware execution time per shot increases approximately linearly "
 			"with repeated 1Q gate depth for this group.")
 	elif fit["slope_seconds_per_gate"] > 0:
 		status = "positive_but_noisy"
 		conclusion = (
-			"IQM execution time per shot increases with depth, but the "
+			"Hardware execution time per shot increases with depth, but the "
 			"linear fit residuals are large enough that repeated runs or "
 			"deeper circuits are needed before using the slope as a stable "
 			"gate-duration estimate.")
@@ -406,34 +374,34 @@ def build_analysis(records: list[dict[str, Any]],
 		status_counts[status] = status_counts.get(status, 0) + 1
 
 	if valid_count == 0:
-		overall_status = "no_iqm_execution_timing"
+		overall_status = "no_hardware_execution_timing"
 		overall_conclusion = (
-			"No successful record contained IQM execution timing. This run "
+			"No successful record contained hardware execution timing. This run "
 			"cannot answer whether execution time scales with repeated 1Q "
 			"gate depth.")
 	elif status_counts.get("approximately_linear_positive", 0):
 		overall_status = "depth_scaling_observed"
 		overall_conclusion = (
 			"At least one gate/qubit group shows approximately linear "
-			"increase in IQM execution time per shot as repeated 1Q gate "
+			"increase in hardware execution time per shot as repeated 1Q gate "
 			"depth increases.")
 	else:
 		overall_status = "depth_scaling_not_established"
 		overall_conclusion = (
 			"This run did not establish a clean positive linear "
-			"depth-scaling trend in the IQM execution-time metric.")
+			"depth-scaling trend in the hardware execution-time metric.")
 
 	return {
-		"schema": "qfw-iqm-1q-analysis-v1",
+		"schema": "qhw-1q-analysis-v1",
 		"intent": (
-			"Determine whether IQM execution time increases linearly as "
+			"Determine whether hardware execution time increases linearly as "
 			"more gates of the same 1Q type are added to a one-qubit "
 			"circuit."),
 		"primary_metric": PRIMARY_METRIC,
 		"primary_metric_definition": (
-			"IQM timeline execution duration divided by shots. The "
+			"Provider timeline execution duration divided by shots. The "
 			"execution duration is the interval from execution_started to "
-			"execution_ended in the IQM job timeline."),
+			"execution_ended in the normalized qhw result timeline."),
 		"diagnostic_metrics_not_used_for_hardware_conclusion": list(
 			DIAGNOSTIC_METRICS),
 		"config": config,
@@ -473,7 +441,7 @@ def plot_records(records: list[dict[str, Any]],
 	if not valid:
 		return {
 			"status": "skipped",
-			"reason": "no successful records with IQM execution timing",
+			"reason": "no successful records with hardware execution timing",
 			"files": [],
 		}
 
@@ -515,7 +483,7 @@ def plot_records(records: list[dict[str, Any]],
 			ys = [point[1] for point in points]
 			plt.plot(xs, ys, marker="o", label=qubit)
 		plt.xlabel("Repeated gate depth")
-		plt.ylabel("IQM execution time per shot (s)")
+		plt.ylabel("Hardware execution time per shot (s)")
 		plt.title(f"1Q {gate} timing by physical qubit")
 		plt.xscale("log", base=2)
 		plt.grid(True, which="both", alpha=0.3)
@@ -532,7 +500,7 @@ def plot_records(records: list[dict[str, Any]],
 			ys = [point[1] for point in points]
 			plt.plot(xs, ys, marker="o", label=gate)
 		plt.xlabel("Repeated gate depth")
-		plt.ylabel("IQM execution time per shot (s)")
+		plt.ylabel("Hardware execution time per shot (s)")
 		plt.title(f"1Q timing on {qubit}")
 		plt.xscale("log", base=2)
 		plt.grid(True, which="both", alpha=0.3)
@@ -601,7 +569,7 @@ def plot_records(records: list[dict[str, Any]],
 
 def render_analysis_markdown(analysis: dict[str, Any]) -> str:
 	lines = [
-		"# IQM 1Q Timing Analysis",
+		"# 1Q Timing Analysis",
 		"",
 		"## Intent",
 		"",
@@ -631,7 +599,7 @@ def render_analysis_markdown(analysis: dict[str, Any]) -> str:
 		"",
 		f"Records: {analysis['record_count']}",
 		f"Successful records: {analysis['successful_record_count']}",
-		f"Records with IQM execution timing: "
+		f"Records with hardware execution timing: "
 		f"{analysis['valid_primary_metric_count']}",
 		f"Failed records: {analysis['failed_record_count']}",
 		"",
@@ -674,10 +642,18 @@ def render_analysis_markdown(analysis: dict[str, Any]) -> str:
 	return "\n".join(lines) + "\n"
 
 
-def run_case(backend, info: dict[str, Any], dry_run: bool):
+def run_case(backend, circuit, args, cid: str, qubit: str, dry_run: bool):
 	if dry_run:
-		return dry_run_result(info["cid"], info["num_shots"])
-	return to_jsonable(backend.sync_run(info))
+		return dry_run_result(cid, args.shots)
+	job = backend.run(
+		[circuit],
+		shots=args.shots,
+		calibration_set_id=args.calibration_set_id,
+		timeout=args.timeout,
+		use_timeslot=args.use_timeslot,
+		qubit_mapping={0: qubit},
+	)
+	return to_jsonable(job.result(timeout=args.timeout))
 
 
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
@@ -748,14 +724,12 @@ def main() -> int:
 					qasm_file = paths.circuits / f"{cid}.qasm"
 					result_file = paths.results / f"{cid}.json"
 					write_qasm2_artifact(circuit, qasm_file)
-					qasm = qasm_file.read_text()
-					info = build_run_info(
-						qasm, args, cid, qubit, gate, depth)
 
 					start = time.monotonic()
 					try:
 						result = run_case(
-							backend, info, args.dry_run)
+							backend, circuit, args, cid,
+							qubit, args.dry_run)
 						ok = result.get("rc") == 0
 						error = None
 					except Exception as exc:
@@ -776,14 +750,13 @@ def main() -> int:
 						"physical_qubit": qubit,
 						"logical_qubits": 1,
 						"gate": gate,
-						"native_gate": native_gate_name(gate),
 						"angle_radians": args.angle,
 						"depth": depth,
 						"shots": args.shots,
 						"backend_mode": args.backend if args.dry_run
 						else backend.name,
 						"source": "qiskit",
-						"submission_path": "sync_run",
+						"submission_path": "backend.run",
 						"qubit_mapping": {"0": qubit},
 						"qasm_file": str(qasm_file),
 						"result_file": result_files.get("qhw"),
@@ -800,7 +773,7 @@ def main() -> int:
 	config = {
 		"qubits": qubits,
 		"gates": args.gates,
-		"native_gate_model": "x/rx/ry Qiskit gates probe IQM PRX",
+		"gate_model": "Qiskit 1Q x/rx/ry gates",
 		"depths": args.depths,
 		"shots": args.shots,
 		"repetitions": args.repetitions,

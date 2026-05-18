@@ -742,12 +742,15 @@ class DirectIQMBackend:
 		return self._qiskit_backends[cache_key]
 
 	def qiskit_run_options(self, shots: int, calibration_set_id=None,
-	    timeout=None, use_timeslot=False, extra_run_options=None):
+	    timeout=None, use_timeslot=False, qubit_mapping=None,
+	    extra_run_options=None):
 		del calibration_set_id, timeout
 		options = {
 			"shots": shots,
 			"use_timeslot": use_timeslot,
 		}
+		if qubit_mapping:
+			options["qubit_mapping"] = qubit_mapping
 		options.update(extra_run_options or {})
 		return options
 

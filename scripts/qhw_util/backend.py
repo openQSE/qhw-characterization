@@ -23,6 +23,26 @@ def qfw_available() -> bool:
 	return True
 
 
+def normalize_qubit_mapping(mapping):
+	if mapping is None:
+		return None
+	if isinstance(mapping, dict):
+		normalized = {
+			int(logical): str(physical)
+			for logical, physical in mapping.items()
+			if physical is not None
+		}
+	elif isinstance(mapping, (list, tuple)):
+		normalized = {
+			logical: str(physical)
+			for logical, physical in enumerate(mapping)
+			if physical is not None
+		}
+	else:
+		raise TypeError("qubit mapping must be a dict, list, or tuple")
+	return normalized or None
+
+
 @dataclass
 class BackendJob:
 	wrapper: "BackendWrapper"
@@ -63,17 +83,20 @@ class BackendWrapper:
 		return getattr(self._adapter, name)
 
 	def run(self, circuits, shots: int = 100, calibration_set_id=None,
-	    timeout=None, use_timeslot=False, **kwargs):
+	    timeout=None, use_timeslot=False, qubit_mapping=None, **kwargs):
 		circuit_list = ensure_circuit_list(circuits)
 		run_input = circuit_list[0] if len(circuit_list) == 1 else circuit_list
+		qubit_mapping = normalize_qubit_mapping(qubit_mapping)
 		context = {
 			"shots": shots,
 			"calibration_set_id": calibration_set_id,
 			"timeout": timeout,
 			"use_timeslot": use_timeslot,
+			"qubit_mapping": qubit_mapping,
 			"extra_run_options": kwargs,
 		}
 		qiskit_backend = self._adapter.qiskit_backend(calibration_set_id)
+		self._set_qubit_mapping(circuit_list, qubit_mapping)
 		run_options = self._run_options(context)
 		run_start = time.monotonic()
 		qiskit_job = qiskit_backend.run(run_input, **run_options)
@@ -81,13 +104,14 @@ class BackendWrapper:
 			self, qiskit_job, circuit_list, shots, run_start, context)
 
 	def run_circuits(self, circuits, shots: int = 100, calibration_set_id=None,
-	    timeout=None, use_timeslot=False, **kwargs):
+	    timeout=None, use_timeslot=False, qubit_mapping=None, **kwargs):
 		return self.run(
 			circuits,
 			shots=shots,
 			calibration_set_id=calibration_set_id,
 			timeout=timeout,
 			use_timeslot=use_timeslot,
+			qubit_mapping=qubit_mapping,
 			**kwargs,
 		).result(timeout=timeout)
 
@@ -100,6 +124,12 @@ class BackendWrapper:
 		options = {"shots": context["shots"]}
 		options.update(context.get("extra_run_options") or {})
 		return options
+
+	def _set_qubit_mapping(self, circuit_list, qubit_mapping) -> None:
+		if not qubit_mapping or not hasattr(self._adapter, "set_qubit_mapping"):
+			return
+		for circuit in circuit_list:
+			self._adapter.set_qubit_mapping(circuit, qubit_mapping)
 
 	def _job_result(self, job, timeout=None):
 		if hasattr(self._adapter, "qiskit_job_result"):
