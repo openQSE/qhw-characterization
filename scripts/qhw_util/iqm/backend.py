@@ -530,6 +530,15 @@ class DirectIQMBackend:
 			"_raw_iqm": raw_payload,
 		}
 
+	def get_device_info(self):
+		static = to_jsonable(self.get_static_architecture())
+		dynamic = to_jsonable(self.get_dynamic_architecture())
+		raw_payload = {
+			"static_architecture": static,
+			"dynamic_architecture": dynamic,
+		}
+		return self._normalize_qhw("device", raw_payload)
+
 	def get_dynamic_backend_info(self, calibration_set_id=None):
 		dynamic = to_jsonable(
 			self.get_dynamic_architecture(calibration_set_id))
@@ -570,28 +579,7 @@ class DirectIQMBackend:
 			"quality_metric_set": quality["data"],
 			"errors": errors,
 		}
-		return {
-			"backend": "iqm-direct",
-			"metadata_supported": True,
-			"calibration_set_id": dynamic.get("calibration_set_id"),
-			"requested_calibration_set_id": (
-				str(requested_calibration_set_id)
-				if requested_calibration_set_id else None),
-			"resolved_calibration_set_id": dynamic.get("calibration_set_id"),
-			"calibration_set": calibration["data"],
-			"calibration_set_summary": summarize_observation_set(
-				calibration["data"]),
-			"quality_metric_set": quality["data"],
-			"quality_metric_set_summary": summarize_observation_set(
-				quality["data"]),
-			"errors": errors,
-			"qubits": dynamic.get("qubits"),
-			"couplers": dynamic.get("couplers"),
-			"qhw_calibration": self._normalize_qhw(
-				"calibration", raw_payload),
-			**self._qhw_tags("calibration"),
-			"_raw_iqm": raw_payload,
-		}
+		return self._normalize_qhw("calibration", raw_payload)
 
 	def get_coupling_graph(self, calibration_set_id=None):
 		static = to_jsonable(self.get_static_architecture())
@@ -601,15 +589,7 @@ class DirectIQMBackend:
 			"static_architecture": static,
 			"dynamic_architecture": dynamic,
 		}
-		return {
-			"backend": "iqm-direct",
-			"metadata_supported": True,
-			"calibration_set_id": dynamic.get("calibration_set_id"),
-			"qhw_coupling": self._normalize_qhw("coupling", raw_payload),
-			**self._qhw_tags("coupling"),
-			"_raw_iqm": raw_payload,
-			**build_coupling_graph(static, dynamic),
-		}
+		return self._normalize_qhw("coupling", raw_payload)
 
 	def _run_iqm_circuits(self, infos):
 		if not infos:
