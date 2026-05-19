@@ -482,13 +482,17 @@ Typical use:
 characterization and reporting. It collects backend metadata, dynamic
 architecture metadata, the calibration snapshot, the quality metric snapshot,
 and the coupling graph. The script writes `device_snapshot.json`,
-`calibration_snapshot.json`, and `coupling_graph.json`.
+`calibration_snapshot.json`, `calibration_quality_summary.json`, and
+`coupling_graph.json`.
 
 The coupling graph is derived from the device architecture and dynamic gate
 loci. This makes the output useful even when the provider API does not expose a
 single direct `couplers` field. The script intentionally does not submit a
 quantum job, and it no longer writes a qSchedSim skeleton file. Its job is to
 record the raw discovery artifacts that other tools or reports can consume.
+For IQM backends, `calibration_quality_summary.json` derives dashboard-style
+average and median values for T1, T2, readout fidelity, and gate fidelities
+from the calibration quality metric observations.
 
 Typical use:
 

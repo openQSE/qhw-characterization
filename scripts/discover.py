@@ -18,6 +18,7 @@ from qhw_util.output import script_output_path
 from qhw_util.output import to_jsonable
 from qhw_util.output import write_json
 from qhw_util.output import write_script_output
+from qhw_util.calibration import qhw_calibration_quality_summary
 from qhw_util.schema import qhw_calibration_set_id
 from qhw_util.schema import qhw_coupling_edges
 from qhw_util.schema import qhw_coupling_nodes
@@ -48,16 +49,23 @@ def main() -> int:
 		backend.get_calibration_snapshot(args.calibration_set_id))
 	coupling_graph = to_jsonable(
 		backend.get_coupling_graph(args.calibration_set_id))
+	calibration_quality_summary = qhw_calibration_quality_summary(
+		calibration_snapshot)
 
 	files = {
 		"device_snapshot": paths.root / "device_snapshot.json",
 		"calibration_snapshot": paths.root / "calibration_snapshot.json",
+		"calibration_quality_summary": (
+			paths.root / "calibration_quality_summary.json"),
 		"coupling_graph": paths.root / "coupling_graph.json",
 	}
 	write_json(files["device_snapshot"], device_snapshot)
 	files["device_snapshot_qhw"] = paths.root / "device_snapshot.qhw.json"
 	write_json(files["device_snapshot_qhw"], device_snapshot["device_info"])
 	write_json(files["calibration_snapshot"], calibration_snapshot)
+	write_json(
+		files["calibration_quality_summary"],
+		calibration_quality_summary)
 	write_json(files["coupling_graph"], coupling_graph)
 
 	qubits = qhw_device_qubits(device_snapshot["device_info"])
