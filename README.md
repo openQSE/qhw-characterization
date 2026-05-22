@@ -63,6 +63,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_timing_2q.sh --depths 1,2,4 --non-connected sample --json
 ./qhw_parallel_1q.sh --widths 1,2,4 --depths 1,2,4 --json
 ./qhw_parallel_2q.sh --matching-sizes 1,2 --depths 1,2,4 --json
+./qhw_readout.sh --qubits QB1,QB2 --widths 1,2 --json
 ```
 
 To force direct mode:
@@ -76,6 +77,7 @@ To force direct mode:
 ./qhw_timing_2q.sh --backend direct --max-connected-pairs 4 --json
 ./qhw_parallel_1q.sh --backend direct --widths 1,2 --json
 ./qhw_parallel_2q.sh --backend direct --matching-sizes 1,2 --json
+./qhw_readout.sh --backend direct --qubits QB1,QB2 --json
 ```
 
 To run the current suite in one QFw session:
@@ -105,7 +107,7 @@ The levels are:
 
 - `smoke`: environment check, discovery capture, and one smoke submission.
 - `l1`: `smoke` plus short timing-overhead and 1Q timing sanity sweeps.
-- `l2`: `smoke` plus broader timing-overhead and 1Q timing sweeps.
+- `l2`: `smoke` plus broader timing, parallelism, and readout sweeps.
 
 Levels are ordered by the manifest. A requested level includes every test from
 that level and all lower levels. Additional levels can be added by extending
@@ -143,6 +145,9 @@ QHW_RUN_ALL_OVERHEAD_WIDTHS=1,2,4
 QHW_RUN_ALL_1Q_QUBITS=all
 QHW_RUN_ALL_1Q_GATES=x,rx,ry
 QHW_RUN_ALL_1Q_DEPTHS=1,2,4,8,16,32,64,128
+QHW_RUN_ALL_READOUT_QUBITS=QB1,QB2,QB3,QB4
+QHW_RUN_ALL_READOUT_WIDTHS=1,2,4
+QHW_RUN_ALL_READOUT_ASSIGNMENT_WIDTHS=1,2
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -423,6 +428,8 @@ The suite intentionally contains more than one workflow style:
 - Timing workflows: `timing_overhead.py`, `timing_1q.py`, `timing_2q.py`,
   `parallel_1q.py`, and `parallel_2q.py` submit Qiskit-authored circuits and
   post-process timing telemetry.
+- Characterization workflows: `readout.py` submits Qiskit-authored basis
+  preparation circuits and post-processes assignment error and readout scaling.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -870,6 +877,62 @@ Common run patterns:
     --json
 ```
 
+### `qhw_readout.sh` / `scripts/readout.py`
+
+`readout.py` characterizes measurement behavior using Qiskit-authored basis
+preparation circuits. It maps each logical circuit qubit to an explicit
+physical qubit, prepares `|0>` or `|1>` states with optional `X` gates,
+measures all qubits, and analyzes the returned counts.
+
+The workflow has three parts:
+
+- Per-qubit assignment checks run prepared `0` and prepared `1` circuits on
+  each selected physical qubit.
+- Small assignment matrices run all basis states for configured subset widths.
+- Readout-scaling checks run all-zeros and all-ones circuits across wider
+  selected qubit subsets.
+
+The default qubit selection is `all`; use `--qubits` to bound the run. The
+default width sweep is `1,2,4,max`. Assignment matrices grow exponentially, so
+`--assignment-widths` defaults to `1,2` and widths larger than
+`--max-assignment-width` are skipped. The script writes
+`results/readout_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/readout_summary.json`.
+
+The key derived values are per-qubit `P(1|0)`, `P(0|1)`, average assignment
+error, assignment fidelity, and multi-qubit hamming-error probability. These
+are count-based metrics. Timing data is preserved in the per-circuit
+normalized qhw result files but is not the primary readout metric.
+
+Common run patterns:
+
+```bash
+# Quick dry-run over two qubits and small assignment matrices.
+./qhw_readout.sh \
+    --dry-run \
+    --qubits QB1,QB2 \
+    --widths 1,2 \
+    --assignment-widths 1,2 \
+    --shots 100 \
+    --json
+
+# Short hardware run over a bounded qubit set.
+./qhw_readout.sh \
+    --qubits QB1,QB2,QB3,QB4 \
+    --widths 1,2,4 \
+    --assignment-widths 1,2 \
+    --shots 1000 \
+    --json
+
+# Direct IQM readout characterization.
+./qhw_readout.sh \
+    --backend direct \
+    --qubits all \
+    --widths 1,2,4,max \
+    --shots 1000 \
+    --json
+```
+
 ## Helper Modules
 
 The `scripts/qhw_util/` package contains shared implementation code used
@@ -880,6 +943,7 @@ by the workflow scripts. These files are not meant to be run directly.
 | `backend.py` | Parses `--backend`, creates `BackendWrapper`, runs the common Qiskit `backend.run()` and `job.result()` flow, and delegates result normalization/extraction. |
 | `iqm/backend.py` | Implements the direct IQM profile, including IQM client metadata queries, IQM Qiskit backend construction, and direct-result qhw normalization. |
 | `qfw/backend.py` | Implements the QFw profile, including QFw Qiskit backend construction and extraction of service-normalized qhw results. |
+| `experiments.py` | Provides common characterization helpers for parsing sweeps, dry-run qhw results, count metrics, simple fits, and JSONL writes. |
 | `output.py` | Creates the `data/<date>/<script>/<run>/` directory layout and writes JSON artifacts. |
 | `qhw.py` | Calls `qhw-iqm` to convert direct IQM raw payloads into provider-neutral `qhw-data` records. |
 | `qfw.py` | Reserves the IQM QPM service and exits the QFw application cleanly. |
