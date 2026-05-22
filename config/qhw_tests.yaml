@@ -7,6 +7,8 @@ levels:
     description: Smoke plus short timing-overhead and 1Q timing sweeps.
   - name: l2
     description: Smoke plus broader timing and parallelism sweeps.
+  - name: qec
+    description: L2 plus explicit QEC memory workflow.
 
 tests:
   - name: env_check
@@ -362,4 +364,33 @@ tests:
           default: "1000"
         - --repetitions
         - env: QHW_RUN_ALL_CROSSTALK_REPETITIONS
+          default: "1"
+
+  - name: qec_memory
+    level: qec
+    script: scripts/qec_memory.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      qec:
+        - --distance
+        - env: QHW_RUN_ALL_QEC_DISTANCE
+          default: "3"
+        - --rounds
+        - env: QHW_RUN_ALL_QEC_ROUNDS
+          default: "3"
+        - --basis
+        - env: QHW_RUN_ALL_QEC_BASIS
+          default: both
+        - --shots
+        - env: QHW_RUN_ALL_QEC_SHOTS
+          default: "1000"
+        - --repetitions
+        - env: QHW_RUN_ALL_QEC_REPETITIONS
           default: "1"

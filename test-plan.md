@@ -934,6 +934,127 @@ Acceptance test:
   superconducting QPM
 - circuit execution returns counts and IQM job metadata
 
+### 20. `scripts/qec_memory.py`
+
+Purpose:
+
+- run a configurable quantum error correction memory experiment
+- default to a rotated surface-code distance-3 memory test
+- collect repeated syndrome samples and decode them offline
+- validate whether the machine can support the circuit structure needed for
+  error correction, even without real-time correction
+
+Default target:
+
+- distance: 3
+- data qubits: `d^2 = 9`
+- check/ancilla qubits: `d^2 - 1 = 8`
+- total qubits: 17
+
+A distance-3 rotated surface-code patch should fit on a 20-qubit system if
+the coupling graph contains a suitable connected subgraph. Larger distances
+should be rejected unless the backend has enough usable qubits.
+
+Required backend capability checks:
+
+- enough active qubits for the requested distance
+- a connected physical patch that can embed the code layout
+- supported two-qubit gates across all patch edges
+- mid-circuit measurement support
+- reset or reinitialization support for check qubits
+
+If mid-circuit measurement or reset is not supported, the script should fail
+clearly or switch to an explicitly labeled fallback mode. The fallback can be
+an encode-idle-decode memory test, but it must not be reported as a full
+repeated-round surface-code memory experiment.
+
+Suggested command:
+
+```bash
+./qhw_qec_memory.sh \
+    --distance 3 \
+    --rounds 3 \
+    --basis both \
+    --shots 1000 \
+    --decoder pymatching \
+    --patch auto \
+    --json
+```
+
+Core options:
+
+- `--distance 3`
+- `--rounds 1,3,5,7` or a single integer
+- `--basis z|x|both`
+- `--patch auto|QB1,QB2,...`
+- `--shots 1000`
+- `--repetitions 1`
+- `--decoder pymatching|none`
+- `--reset-mode hardware|none`
+- `--idle-us <delay between rounds>`
+- `--dry-run`
+
+Workflow:
+
+1. Query normalized backend metadata with `get_device_info()` and
+   `get_coupling_graph()`.
+2. Select or validate a physical surface-code patch.
+3. Build the logical-to-physical mapping for data and check qubits.
+4. Generate memory circuits for logical `Z` memory, logical `X` memory, or
+   both.
+5. Use a fixed stabilizer-extraction schedule that avoids using a qubit in
+   two two-qubit gates in the same layer.
+6. Submit circuits through the common backend wrapper.
+7. Extract syndrome bits by shot and by round.
+8. Build detection events offline from syndrome changes across rounds.
+9. Decode detection events offline, initially with `pymatching` if available.
+10. Report logical failure rate, detection-event rate by check, and
+    detection-event rate by round.
+
+The script should preserve the generated circuits as artifacts. For an
+IQM/CZ-native backend, the circuit generator can express check extraction
+through Qiskit gates and let the backend transpilation path lower it to native
+operations, but the emitted artifacts should still record the selected patch
+and schedule.
+
+Expected output layout:
+
+```text
+data/<date>/qec_memory/<run-id>/
+  patch.json
+  backend_info.json
+  coupling_graph.qhw.json
+  circuits/
+    qec_memory_z_d3_r3.qasm
+    qec_memory_x_d3_r3.qasm
+  results/
+    qec_memory_z_d3_r3.qhw.json
+    qec_memory_z_d3_r3.raw.json
+    syndrome_records.jsonl
+    decoder_records.jsonl
+    analysis.json
+    analysis.md
+    qec_memory_summary.json
+```
+
+Analysis products:
+
+- selected physical patch and check layout
+- logical failure rate by basis
+- syndrome detection-event rate by stabilizer
+- detection-event rate by round
+- hot checks or hot data qubits
+- decoder success/failure counts
+- fallback-mode warning when repeated-round QEC cannot be run
+
+Acceptance test:
+
+- dry-run generates a valid distance-3 patch, circuits, and analysis files
+- hardware run either executes repeated-round circuits or fails with a clear
+  unsupported-capability message
+- decoded output includes logical failure rate for each requested basis
+- all records are tied to backend metadata, coupling graph, and calibration id
+
 ## Campaign Order
 
 Run campaigns in this order:

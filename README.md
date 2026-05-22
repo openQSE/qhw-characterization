@@ -69,6 +69,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_rb_2q.sh --max-edges 2 --lengths 1,2,4 --sequences 2 --json
 ./qhw_depth_limits.sh --widths 1,2,4 --depths 1,2,4 --json
 ./qhw_crosstalk.sh --max-pairs 2 --gate-depths 0,8 --json
+./qhw_qec_memory.sh --distance 3 --rounds 3 --basis both --json
 ./qhw_drift_report.sh --json
 ```
 
@@ -89,6 +90,7 @@ To force direct mode:
 ./qhw_rb_2q.sh --backend direct --max-edges 1 --lengths 1,2 --json
 ./qhw_depth_limits.sh --backend direct --widths 1,2 --depths 1,2 --json
 ./qhw_crosstalk.sh --backend direct --pairs QB1-QB2 --json
+./qhw_qec_memory.sh --backend direct --distance 3 --rounds 1 --basis z --json
 ```
 
 To run the current suite in one QFw session:
@@ -103,6 +105,7 @@ To run the current suite in one QFw session:
 ./qhw_run_all.sh --level smoke
 ./qhw_run_all.sh --level l1
 ./qhw_run_all.sh --level l2
+./qhw_run_all.sh --level qec
 ```
 
 The positional form is also accepted:
@@ -119,6 +122,7 @@ The levels are:
 - `smoke`: environment check, discovery capture, and one smoke submission.
 - `l1`: `smoke` plus short timing-overhead and 1Q timing sanity sweeps.
 - `l2`: `smoke` plus broader timing, parallelism, and readout sweeps.
+- `qec`: `l2` plus the explicit QEC memory workflow.
 
 Levels are ordered by the manifest. A requested level includes every test from
 that level and all lower levels. Additional levels can be added by extending
@@ -173,6 +177,16 @@ QHW_RUN_ALL_DEPTH_WIDTHS=1,2,4
 QHW_RUN_ALL_DEPTH_DEPTHS=1,2,4
 QHW_RUN_ALL_CROSSTALK_MAX_PAIRS=2
 QHW_RUN_ALL_CROSSTALK_GATE_DEPTHS=0,8
+```
+
+The `qec` level adds the following defaults:
+
+```bash
+QHW_RUN_ALL_QEC_DISTANCE=3
+QHW_RUN_ALL_QEC_ROUNDS=3
+QHW_RUN_ALL_QEC_BASIS=both
+QHW_RUN_ALL_QEC_SHOTS=1000
+QHW_RUN_ALL_QEC_REPETITIONS=1
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -463,6 +477,9 @@ The suite intentionally contains more than one workflow style:
   and depth and reports the largest depth meeting a quality threshold.
 - Crosstalk workflows: `crosstalk.py` runs bounded spectator-state checks on
   coupling-graph pairs and reports target-error deltas.
+- QEC workflows: `qec_memory.py` generates repeated-round
+  surface-code-memory circuits, records syndrome samples, and decodes them
+  offline.
 - Offline reporting workflows: `drift_report.py` scans prior discovery
   outputs and does not select a backend or submit circuits.
 
@@ -1184,6 +1201,69 @@ Common run patterns:
     --max-pairs 4 \
     --bidirectional \
     --gate-depths 0,8 \
+    --json
+```
+
+### `qhw_qec_memory.sh` / `scripts/qec_memory.py`
+
+`qec_memory.py` generates a repeated-round surface-code-memory style circuit,
+runs it through the selected backend, records syndrome samples, and performs
+offline decoding after the job completes. The default target is a rotated
+surface-code distance-3 layout, which uses 9 data qubits and 8 check qubits.
+That 17-qubit footprint fits on a 20-qubit machine if the coupling graph
+contains a suitable connected patch.
+
+The script checks that the selected patch has enough qubits and is connected.
+It records whether every check-data interaction is available as a native
+coupling edge. By default it allows transpilation to route missing native
+interactions and records a warning; use `--require-native-patch` to make that
+condition fatal. Repeated-round operation requires check-qubit reset, so the
+script fails early if reset is not advertised and `--reset-mode hardware` is
+selected.
+
+The first implementation uses a simple offline logical-parity decoder. The
+`--decoder pymatching` option is accepted for workflow compatibility, but
+detector-graph construction for `pymatching` is still a future enhancement.
+
+Outputs include `patch.json`, `coupling_graph.qhw.json`,
+`results/syndrome_records.jsonl`, `results/decoder_records.jsonl`,
+`results/analysis.json`, `results/analysis.md`, and
+`results/qec_memory_summary.json`.
+
+Common run patterns:
+
+```bash
+# Dry-run the distance-3 repeated-round workflow and inspect artifacts.
+./qhw_qec_memory.sh \
+    --dry-run \
+    --distance 3 \
+    --rounds 3 \
+    --basis both \
+    --shots 100 \
+    --json
+
+# One-round hardware capability check.
+./qhw_qec_memory.sh \
+    --distance 3 \
+    --rounds 1 \
+    --basis z \
+    --shots 1000 \
+    --json
+
+# Require native check-data edges for the selected patch.
+./qhw_qec_memory.sh \
+    --distance 3 \
+    --rounds 3 \
+    --basis both \
+    --require-native-patch \
+    --json
+
+# Run an explicit physical patch.
+./qhw_qec_memory.sh \
+    --patch QB1,QB2,QB3,QB4,QB5,QB6,QB7,QB8,QB9,QB10,QB11,QB12,QB13,QB14,QB15,QB16,QB17 \
+    --distance 3 \
+    --rounds 3 \
+    --basis both \
     --json
 ```
 
