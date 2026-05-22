@@ -69,6 +69,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_rb_2q.sh --max-edges 2 --lengths 1,2,4 --sequences 2 --json
 ./qhw_depth_limits.sh --widths 1,2,4 --depths 1,2,4 --json
 ./qhw_crosstalk.sh --max-pairs 2 --gate-depths 0,8 --json
+./qhw_drift_report.sh --json
 ```
 
 To force direct mode:
@@ -462,6 +463,8 @@ The suite intentionally contains more than one workflow style:
   and depth and reports the largest depth meeting a quality threshold.
 - Crosstalk workflows: `crosstalk.py` runs bounded spectator-state checks on
   coupling-graph pairs and reports target-error deltas.
+- Offline reporting workflows: `drift_report.py` scans prior discovery
+  outputs and does not select a backend or submit circuits.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -1181,6 +1184,41 @@ Common run patterns:
     --max-pairs 4 \
     --bidirectional \
     --gate-depths 0,8 \
+    --json
+```
+
+### `qhw_drift_report.sh` / `scripts/drift_report.py`
+
+`drift_report.py` is an offline reporting workflow. It scans existing
+`qhw_discover.sh` outputs under
+`data/<date>/discover/*/calibration_quality_summary.json`, builds per-metric
+time series, and reports first-to-last changes in calibration quality metrics.
+It does not start QFw, query IQM, or submit circuits.
+
+Use this after running `qhw_discover.sh` periodically with cron, a systemd
+timer, or another site scheduler. The default metrics are whatever appears in
+the quality summary files. Use `--metrics` to restrict the report and
+`--relative-threshold` to control which metrics are flagged.
+
+Outputs include `results/drift_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/drift_summary.json`.
+
+Common run patterns:
+
+```bash
+# Report all available calibration-quality metrics.
+./qhw_drift_report.sh --json
+
+# Report a specific date range.
+./qhw_drift_report.sh \
+    --start-date 20260518 \
+    --end-date 20260522 \
+    --json
+
+# Restrict to a small metric set and use a tighter drift threshold.
+./qhw_drift_report.sh \
+    --metrics t1_time,t2_time_ramsey,prx_gate_fidelity \
+    --relative-threshold 0.02 \
     --json
 ```
 

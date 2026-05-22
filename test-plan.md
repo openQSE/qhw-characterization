@@ -856,18 +856,27 @@ Acceptance test:
 - produces pairwise or edge-set crosstalk records
 - summary identifies high-conflict qubits or edges
 
-### 15. `scripts/drift_monitor.py`
+### 15. `scripts/drift_report.py`
 
 Purpose:
 
-- run a small sentinel suite repeatedly
-- track calibration drift
-- record model validity over time
+- scan existing discovery outputs from scheduled `qhw_discover.sh` runs
+- compare `data/<date>/discover/*/calibration_quality_summary.json`
+  records over time
+- track changes in T1, T2, readout fidelity, and gate fidelity
 
 Acceptance test:
 
-- repeated run produces time-series records
-- summary identifies drift in timing, fidelity, readout, T1, or T2
+- report builds a time series from existing discover run directories
+- summary identifies drift in T1, T2, readout, PRX, CZ, and Clifford metrics
+- output does not submit jobs or query the backend directly
+
+Operational note:
+
+- drift data collection is handled by running `qhw_discover.sh` periodically,
+  for example with cron or a systemd timer
+- `drift_report.py` is a post-processing/reporting script, not a hardware
+  submission script
 
 ### 16. `scripts/fit_timing_model.py`
 
