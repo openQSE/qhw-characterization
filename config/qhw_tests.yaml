@@ -256,3 +256,29 @@ tests:
         - --repetitions
         - env: QHW_RUN_ALL_COHERENCE_REPETITIONS
           default: "1"
+
+  - name: rb_1q
+    level: l2
+    script: scripts/rb_1q.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      l2:
+        - --qubits
+        - env: QHW_RUN_ALL_RB_1Q_QUBITS
+          default: QB1,QB2
+        - --lengths
+        - env: QHW_RUN_ALL_RB_1Q_LENGTHS
+          default: 1,2,4,8
+        - --sequences
+        - env: QHW_RUN_ALL_RB_1Q_SEQUENCES
+          default: "2"
+        - --shots
+        - env: QHW_RUN_ALL_RB_1Q_SHOTS
+          default: "1000"

@@ -65,6 +65,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_parallel_2q.sh --matching-sizes 1,2 --depths 1,2,4 --json
 ./qhw_readout.sh --qubits QB1,QB2 --widths 1,2 --json
 ./qhw_coherence.sh --qubits QB1,QB2 --delays-us 1,2,4,8 --json
+./qhw_rb_1q.sh --qubits QB1,QB2 --lengths 1,2,4,8 --sequences 4 --json
 ```
 
 To force direct mode:
@@ -80,6 +81,7 @@ To force direct mode:
 ./qhw_parallel_2q.sh --backend direct --matching-sizes 1,2 --json
 ./qhw_readout.sh --backend direct --qubits QB1,QB2 --json
 ./qhw_coherence.sh --backend direct --qubits QB1 --experiments t1 --json
+./qhw_rb_1q.sh --backend direct --qubits QB1 --lengths 1,2,4 --json
 ```
 
 To run the current suite in one QFw session:
@@ -153,6 +155,9 @@ QHW_RUN_ALL_READOUT_ASSIGNMENT_WIDTHS=1,2
 QHW_RUN_ALL_COHERENCE_QUBITS=QB1,QB2,QB3,QB4
 QHW_RUN_ALL_COHERENCE_EXPERIMENTS=t1,ramsey,echo
 QHW_RUN_ALL_COHERENCE_DELAYS_US=1,2,4,8,16,32
+QHW_RUN_ALL_RB_1Q_QUBITS=QB1,QB2
+QHW_RUN_ALL_RB_1Q_LENGTHS=1,2,4,8
+QHW_RUN_ALL_RB_1Q_SEQUENCES=2
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -437,6 +442,8 @@ The suite intentionally contains more than one workflow style:
   preparation circuits and post-processes assignment error and readout scaling.
 - Coherence workflows: `coherence.py` submits delay-based Qiskit circuits and
   estimates T1-like and T2-like decay trends from returned counts.
+- Randomized benchmarking workflows: `rb_1q.py` submits Clifford-authored
+  single-qubit RB circuits and estimates survival decay.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -984,6 +991,50 @@ Common run patterns:
     --qubits QB1 \
     --experiments t1 \
     --delays-us 1,2,4,8,16,32,64 \
+    --json
+```
+
+### `qhw_rb_1q.sh` / `scripts/rb_1q.py`
+
+`rb_1q.py` runs single-qubit randomized benchmarking style circuits. For each
+selected physical qubit, sequence length, and random sequence index, the script
+uses Qiskit to generate a random Clifford sequence, appends the exact Clifford
+inverse, measures the qubit, and records the probability of returning to the
+ideal `0` state.
+
+The workflow fits survival probability versus Clifford sequence length for
+each physical qubit. The fit is a lightweight characterization summary rather
+than a full statistical RB package. It is useful for comparing qubits,
+detecting obvious calibration problems, and feeding a first-pass error model.
+
+Outputs include `results/rb_1q_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/rb_1q_summary.json`.
+
+Common run patterns:
+
+```bash
+# Quick dry-run over two lengths and two random sequences.
+./qhw_rb_1q.sh \
+    --dry-run \
+    --qubits QB1,QB2 \
+    --lengths 1,2 \
+    --sequences 2 \
+    --json
+
+# Short hardware run on selected qubits.
+./qhw_rb_1q.sh \
+    --qubits QB1,QB2 \
+    --lengths 1,2,4,8,16 \
+    --sequences 8 \
+    --shots 1000 \
+    --json
+
+# Direct IQM run.
+./qhw_rb_1q.sh \
+    --backend direct \
+    --qubits QB1 \
+    --lengths 1,2,4,8 \
+    --sequences 4 \
     --json
 ```
 
