@@ -755,6 +755,62 @@ Common run patterns:
     --json
 ```
 
+### `qhw_parallel_1q.sh` / `scripts/parallel_1q.py`
+
+`parallel_1q.py` tests whether a layer of simultaneous one-qubit gates behaves
+like one parallel hardware layer or whether execution time grows with the
+number of active qubits. It builds Qiskit circuits with the same 1Q gate
+sequence applied to `width` logical qubits in each repeated layer, maps those
+logical qubits onto selected physical qubits, and submits each circuit through
+the common backend path.
+
+The default gate sequence is `rx,ry`, the default width sweep is
+`1,2,4,8,max`, and the default depth sweep is `1,2,4,8,16,32,64,128`. Use
+`--qubits` to restrict the physical qubit pool, `--widths` to control active
+layer size, `--gates` to set the 1Q sequence from `x`, `rx`, and `ry`, and
+`--angle` to change RX/RY angles.
+
+Before the width/depth sweep, the script measures single-gate baselines for
+each selected physical qubit and gate in the sequence. It then compares each
+observed layer time against a serial model and an ideal-parallel model. This
+makes the output easier to interpret than a width fit alone.
+
+The primary hardware metric is `execution_per_shot_seconds`. The analysis fits
+execution time against active width at fixed gate/depth. A flat width fit
+supports a parallel-layer model, while a positive width term suggests control
+fanout, serialization, or another width-dependent cost.
+
+Common run patterns:
+
+```bash
+# Quick dry-run to inspect planned circuits and output layout.
+./qhw_parallel_1q.sh \
+    --dry-run \
+    --qubits QB1,QB2,QB3,QB4 \
+    --widths 1,2,4 \
+    --depths 1,2 \
+    --json
+
+# Short hardware run over a bounded physical-qubit pool.
+./qhw_parallel_1q.sh \
+    --qubits QB1,QB2,QB3,QB4 \
+    --widths 1,2,4 \
+    --gates rx,ry \
+    --depths 1,2,4,8 \
+    --shots 100 \
+    --json
+
+# Broader direct-IQM run across all active qubits.
+./qhw_parallel_1q.sh \
+    --backend direct \
+    --qubits all \
+    --widths 1,2,4,8,max \
+    --gates rx,ry \
+    --depths 1,2,4,8,16 \
+    --json
+```
+
+
 ## Helper Modules
 
 The `scripts/qhw_util/` package contains shared implementation code used
