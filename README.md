@@ -52,7 +52,7 @@ When QFw is activated, `auto` uses QFw. Otherwise, `auto` uses direct
 `iqm-client` access.
 
 In QFw mode, each wrapper starts QFw with `config/qhw_services.yaml`, runs
-one Python script through `qfw_srun.sh`, and tears QFw down.
+the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 
 ```bash
 ./qhw_env_check.sh --json
@@ -60,6 +60,7 @@ one Python script through `qfw_srun.sh`, and tears QFw down.
 ./qhw_submit_smoke.sh --shots 100 --json
 ./qhw_timing_overhead.sh --shots-sweep 1,10,100 --batch-sweep 1,2 --json
 ./qhw_timing_1q.sh --qubits QB1,QB2 --gates rx,ry --depths 1,2,4 --json
+./qhw_timing_2q.sh --depths 1,2,4 --non-connected sample --json
 ```
 
 To force direct mode:
@@ -70,6 +71,7 @@ To force direct mode:
 ./qhw_submit_smoke.sh --backend direct --shots 100 --json
 ./qhw_timing_overhead.sh --backend direct --shots-sweep 1,10,100 --json
 ./qhw_timing_1q.sh --backend direct --qubits QB1 --gates rx --json
+./qhw_timing_2q.sh --backend direct --max-connected-pairs 4 --json
 ```
 
 To run the current suite in one QFw session:
@@ -450,13 +452,15 @@ finish backend cleanly
 
 ## Script Reference
 
-The top-level Python files under `scripts/` are the workflow entry points.
-They all support `--backend auto|qfw|direct`, `--output-dir`, `--run-id`,
-and `--json`. Scripts that contact the machine also support
+The top-level `qhw_*.sh` files are the user-facing workflow entry points.
+The Python files under `scripts/` implement each workflow and are invoked by
+the wrappers. The wrappers all support `--backend auto|qfw|direct`,
+`--output-dir`, `--run-id`, and `--json`. Workflows that contact the machine
+also support
 `--system-up-timeout`; scripts that query or submit against a specific
 calibration can use `--calibration-set-id`.
 
-### `scripts/env_check.py`
+### `qhw_env_check.sh` / `scripts/env_check.py`
 
 `env_check.py` is the first connectivity and metadata check. It selects
 the requested backend, asks the backend for static and dynamic device
@@ -476,7 +480,7 @@ Typical use:
 ./qhw_env_check.sh --backend direct --json
 ```
 
-### `scripts/discover.py`
+### `qhw_discover.sh` / `scripts/discover.py`
 
 `discover.py` captures the machine description needed for later
 characterization and reporting. It collects backend metadata, dynamic
@@ -501,7 +505,7 @@ Typical use:
 ./qhw_discover.sh --calibration-set-id <uuid> --json
 ```
 
-### `scripts/submit_smoke.py`
+### `qhw_submit_smoke.sh` / `scripts/submit_smoke.py`
 
 `submit_smoke.py` is the preferred operational smoke test. It builds a
 one-qubit Qiskit circuit, optionally applies an `X` gate with `--flip`, measures
@@ -522,7 +526,7 @@ Typical use:
 ./qhw_submit_smoke.sh --shots 100 --flip --json
 ```
 
-### `scripts/timing_overhead.py`
+### `qhw_timing_overhead.sh` / `scripts/timing_overhead.py`
 
 `timing_overhead.py` measures job-submission and execution timing using
 Qiskit-authored measurement circuits. It runs two experiment families. The
@@ -548,7 +552,7 @@ Typical use:
     --json
 ```
 
-### `scripts/timing_1q.py`
+### `qhw_timing_1q.sh` / `scripts/timing_1q.py`
 
 `timing_1q.py` implements the single-qubit gate duration test from the
 characterization plan. It uses Qiskit to author one-qubit circuits, repeats a
@@ -595,6 +599,150 @@ Typical use:
     --json
 ```
 
+### `qhw_timing_2q.sh` / `scripts/timing_2q.py`
+
+`qhw_timing_2q.sh` is the preferred entry point for the two-qubit gate duration
+test from the characterization plan. The wrapper handles QFw startup and
+teardown when needed, then invokes `scripts/timing_2q.py`. The workflow asks
+the selected backend for the normalized `qhw-coupling-v1` coupling graph,
+selects physical qubit pairs from that graph, builds Qiskit two-qubit circuits,
+applies explicit logical-to-physical mapping `{0: physical_q0, 1:
+physical_q1}`, and submits each circuit through the common backend path.
+
+The test covers two pair classes:
+
+- `connected`: physical pairs that appear in the normalized coupling graph or
+  in the selected gate's supported two-qubit loci.
+- `non_connected`: sampled physical pairs that do not appear as graph edges.
+
+Connected pairs measure native or provider-supported two-qubit timing.
+Non-connected pairs are intentionally different. If they execute, the measured
+time includes whatever routing or provider-specific handling the backend used
+to make the circuit legal. If they fail, the failure is recorded as useful
+placement-support information. Non-connected failures do not fail the whole
+script unless `--require-non-connected-success` is set.
+
+Gate selection is backend-driven by default. With `--gates auto`, the script
+looks at the normalized coupling operations and picks `cz` when present. If a
+backend reports another Qiskit-compatible two-qubit operation, the script can
+use it as long as it is one of `cz`, `cx`, `cnot`, `swap`, `ecr`, `rxx`, `ryy`,
+or `rzz`. For provider-native names that do not map directly to Qiskit circuit
+methods, add a provider adapter or extend the gate builder before using the
+script.
+
+The default depth sweep is `1,2,4,8,16,32,64,128`. The default non-connected
+selection samples up to four pairs at graph distances `2`, `3`, and `far`,
+where `far` means the largest finite distance in the coupling graph. This keeps
+the matrix bounded while still covering local routed pairs and long-path routed
+pairs. Use `--non-connected none` for connected-only native timing, or
+`--non-connected all` for exhaustive non-connected coverage.
+
+Each repeated 2Q depth layer is built as `rx` on both qubits, the selected 2Q
+gate, then `ry` on both qubits. This keeps the timing probe from being only a
+long string of identical 2Q gates that a compiler might simplify. Before the
+depth sweep, the script measures single `rx` and `ry` baselines on each
+involved physical qubit and a single selected 2Q gate on each selected pair.
+The analysis reports both a serial baseline model and an ideal-parallel model
+for the interleaved layer.
+
+For each point, the script writes the generated QASM artifact, the normalized
+result, optional raw provider result, and a JSON-lines timing record. It also
+writes `coupling_graph.json`, `selected_pairs.json`,
+`results/timing_summary.json`, `results/analysis.json`,
+`results/analysis.md`, and plots under `results/plots/` when `matplotlib` is
+available.
+
+The generated plots show depth on the x-axis and hardware execution time per
+shot on the y-axis. The default plot set includes one aggregate plot per gate
+comparing connected and non-connected pair classes, one connected-pair plot per
+gate, fit-residual plots per gate, and a heatmap of fitted slope by gate and
+physical pair. If `matplotlib` is not installed, the script still completes and
+records that plot generation was skipped in the analysis files.
+
+The primary hardware metric is `execution_per_shot_seconds`. It uses the
+provider timeline interval from `execution_started` to `execution_ended`,
+divided by the shot count. Wall-time fields such as `script_wall_seconds`,
+`client_total_seconds`, and `server_total_seconds` are recorded only as
+diagnostics because they include client, service, queueing, and orchestration
+overhead.
+
+Common run patterns:
+
+```bash
+# Quick dry-run to inspect selected pairs and output layout without hardware.
+./qhw_timing_2q.sh \
+    --dry-run \
+    --depths 1,2 \
+    --max-connected-pairs 2 \
+    --non-connected-per-distance 1 \
+    --json
+
+# Connected-pair native timing only. This avoids routed/non-connected cases.
+./qhw_timing_2q.sh \
+    --non-connected none \
+    --depths 1,2,4,8,16 \
+    --shots 100 \
+    --repetitions 3 \
+    --json
+
+# Sample connected and non-connected pairs by graph distance.
+./qhw_timing_2q.sh \
+    --non-connected sample \
+    --non-connected-distances 2,3,far \
+    --non-connected-per-distance 4 \
+    --depths 1,2,4,8 \
+    --shots 100 \
+    --json
+
+# Limit connected-pair coverage for a short exploratory run.
+./qhw_timing_2q.sh \
+    --max-connected-pairs 6 \
+    --non-connected-per-distance 2 \
+    --sample-seed 7 \
+    --depths 1,2,4 \
+    --json
+
+# Test explicit physical pairs. Pair separators can be '-', ':' or '/'.
+./qhw_timing_2q.sh \
+    --connected-pairs QB1-QB2,QB4-QB5 \
+    --non-connected none \
+    --gates cz \
+    --depths 1,2,4,8 \
+    --json
+
+# Exhaustive non-connected coverage. This can create a large run matrix.
+./qhw_timing_2q.sh \
+    --non-connected all \
+    --max-connected-pairs 0 \
+    --depths 1,2 \
+    --shots 100 \
+    --json
+
+# Force direct IQM backend instead of auto/QFw selection.
+./qhw_timing_2q.sh \
+    --backend direct \
+    --provider iqm \
+    --non-connected sample \
+    --depths 1,2,4 \
+    --json
+
+# Force QFw backend. Requires an activated QFw environment.
+./qhw_timing_2q.sh \
+    --backend qfw \
+    --qfw-type hardware \
+    --qfw-capability superconducting \
+    --non-connected none \
+    --depths 1,2,4 \
+    --json
+
+# Treat non-connected failures as fatal to the script result.
+./qhw_timing_2q.sh \
+    --non-connected sample \
+    --require-non-connected-success \
+    --depths 1,2 \
+    --json
+```
+
 ## Helper Modules
 
 The `scripts/qhw_util/` package contains shared implementation code used
@@ -617,12 +765,11 @@ and teardown when `--backend qfw` is selected or `--backend auto` detects an
 activated QFw shell. The Python scripts run as QFw applications and use
 `api_qpm` to reserve the IQM QPM service.
 
-The default service config starts one IQM QPM on group 1:
+The default service config starts one IQM QPM on group 1. Use the shell
+wrappers rather than calling `qfw_srun.sh` directly:
 
 ```bash
-qfw_setup.sh --services-config config/qhw_services.yaml
-qfw_srun.sh scripts/submit_smoke.py
-qfw_teardown.sh
+./qhw_submit_smoke.sh --backend qfw --shots 100 --json
 ```
 
 For a heterogeneous allocation, the application runs on group 0 and the IQM

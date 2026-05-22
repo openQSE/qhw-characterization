@@ -760,7 +760,7 @@ class DirectIQMBackend:
 			"use_timeslot": use_timeslot,
 		}
 		if qubit_mapping:
-			options["qubit_mapping"] = qubit_mapping
+			options["qubit_index_to_name"] = qubit_mapping
 		options.update(extra_run_options or {})
 		return options
 
