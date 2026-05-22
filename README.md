@@ -61,6 +61,8 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_timing_overhead.sh --shots-sweep 1,10,100 --batch-sweep 1,2 --json
 ./qhw_timing_1q.sh --qubits QB1,QB2 --gates rx,ry --depths 1,2,4 --json
 ./qhw_timing_2q.sh --depths 1,2,4 --non-connected sample --json
+./qhw_parallel_1q.sh --widths 1,2,4 --depths 1,2,4 --json
+./qhw_parallel_2q.sh --matching-sizes 1,2 --depths 1,2,4 --json
 ```
 
 To force direct mode:
@@ -72,6 +74,8 @@ To force direct mode:
 ./qhw_timing_overhead.sh --backend direct --shots-sweep 1,10,100 --json
 ./qhw_timing_1q.sh --backend direct --qubits QB1 --gates rx --json
 ./qhw_timing_2q.sh --backend direct --max-connected-pairs 4 --json
+./qhw_parallel_1q.sh --backend direct --widths 1,2 --json
+./qhw_parallel_2q.sh --backend direct --matching-sizes 1,2 --json
 ```
 
 To run the current suite in one QFw session:
@@ -416,8 +420,9 @@ The suite intentionally contains more than one workflow style:
   backend and do not submit quantum jobs.
 - Operational smoke workflows: `submit_smoke.py` submits a small
   Qiskit-authored circuit to confirm that execution and result retrieval work.
-- Timing workflows: `timing_overhead.py` and `timing_1q.py` submit
-  Qiskit-authored circuits and post-process timing telemetry.
+- Timing workflows: `timing_overhead.py`, `timing_1q.py`, `timing_2q.py`,
+  `parallel_1q.py`, and `parallel_2q.py` submit Qiskit-authored circuits and
+  post-process timing telemetry.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -809,7 +814,6 @@ Common run patterns:
     --depths 1,2,4,8,16 \
     --json
 ```
-
 
 ### `qhw_parallel_2q.sh` / `scripts/parallel_2q.py`
 
