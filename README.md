@@ -811,6 +811,61 @@ Common run patterns:
 ```
 
 
+### `qhw_parallel_2q.sh` / `scripts/parallel_2q.py`
+
+`parallel_2q.py` tests whether disjoint two-qubit gates execute as one
+parallel layer. It asks the backend for the normalized `qhw-coupling-v1`
+coupling graph, selects disjoint edge matchings, builds one Qiskit circuit per
+matching/depth point, applies explicit logical-to-physical mapping for every
+edge in the matching, and submits each circuit through the common backend path.
+
+With `--gates auto`, the script selects a supported two-qubit operation from
+the coupling graph, preferring `cz`. `--matching-sizes` accepts integers,
+`max`, or `all`; `--matchings-per-size` bounds how many sampled matchings are
+tested per size. This keeps the matrix from exploding while still comparing
+single-edge layers, multi-edge layers, and maximum-size disjoint layers.
+
+Each repeated 2Q layer is interleaved with `rx` and `ry` layers on all active
+qubits. The script first measures single `rx` and `ry` baselines on all
+involved qubits and single-2Q baselines on all sampled edges. The analysis then
+compares observed timing against serial and ideal-parallel baseline models in
+addition to fitting timing against matching size.
+
+The primary hardware metric is `execution_per_shot_seconds`. The analysis fits
+execution time against matching size at fixed gate/depth. A flat matching-size
+fit supports a parallel 2Q layer model, while a positive matching-size term
+suggests serialization, congestion, frequency conflict, or another
+edge-set-dependent cost.
+
+Common run patterns:
+
+```bash
+# Quick dry-run over sampled matchings.
+./qhw_parallel_2q.sh \
+    --dry-run \
+    --matching-sizes 1,2 \
+    --matchings-per-size 1 \
+    --depths 1,2 \
+    --json
+
+# Short hardware run comparing one edge against two disjoint edges.
+./qhw_parallel_2q.sh \
+    --matching-sizes 1,2 \
+    --matchings-per-size 1 \
+    --depths 1,2,4 \
+    --shots 100 \
+    --json
+
+# Broader direct-IQM run including max-size matchings.
+./qhw_parallel_2q.sh \
+    --backend direct \
+    --gates auto \
+    --matching-sizes 1,2,max \
+    --matchings-per-size 2 \
+    --depths 1,2,4,8 \
+    --json
+```
+
 ## Helper Modules
 
 The `scripts/qhw_util/` package contains shared implementation code used
