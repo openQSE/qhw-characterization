@@ -308,3 +308,32 @@ tests:
         - --shots
         - env: QHW_RUN_ALL_RB_2Q_SHOTS
           default: "1000"
+
+  - name: depth_limits
+    level: l2
+    script: scripts/depth_limits.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      l2:
+        - --qubits
+        - env: QHW_RUN_ALL_DEPTH_QUBITS
+          default: QB1,QB2,QB3,QB4
+        - --widths
+        - env: QHW_RUN_ALL_DEPTH_WIDTHS
+          default: 1,2,4
+        - --families
+        - env: QHW_RUN_ALL_DEPTH_FAMILIES
+          default: ghz,mirror
+        - --depths
+        - env: QHW_RUN_ALL_DEPTH_DEPTHS
+          default: 1,2,4
+        - --shots
+        - env: QHW_RUN_ALL_DEPTH_SHOTS
+          default: "1000"

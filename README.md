@@ -67,6 +67,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_coherence.sh --qubits QB1,QB2 --delays-us 1,2,4,8 --json
 ./qhw_rb_1q.sh --qubits QB1,QB2 --lengths 1,2,4,8 --sequences 4 --json
 ./qhw_rb_2q.sh --max-edges 2 --lengths 1,2,4 --sequences 2 --json
+./qhw_depth_limits.sh --widths 1,2,4 --depths 1,2,4 --json
 ```
 
 To force direct mode:
@@ -84,6 +85,7 @@ To force direct mode:
 ./qhw_coherence.sh --backend direct --qubits QB1 --experiments t1 --json
 ./qhw_rb_1q.sh --backend direct --qubits QB1 --lengths 1,2,4 --json
 ./qhw_rb_2q.sh --backend direct --max-edges 1 --lengths 1,2 --json
+./qhw_depth_limits.sh --backend direct --widths 1,2 --depths 1,2 --json
 ```
 
 To run the current suite in one QFw session:
@@ -163,6 +165,9 @@ QHW_RUN_ALL_RB_1Q_SEQUENCES=2
 QHW_RUN_ALL_RB_2Q_MAX_EDGES=2
 QHW_RUN_ALL_RB_2Q_LENGTHS=1,2,4
 QHW_RUN_ALL_RB_2Q_SEQUENCES=2
+QHW_RUN_ALL_DEPTH_QUBITS=QB1,QB2,QB3,QB4
+QHW_RUN_ALL_DEPTH_WIDTHS=1,2,4
+QHW_RUN_ALL_DEPTH_DEPTHS=1,2,4
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -449,6 +454,8 @@ The suite intentionally contains more than one workflow style:
   estimates T1-like and T2-like decay trends from returned counts.
 - Randomized benchmarking workflows: `rb_1q.py` and `rb_2q.py` submit
   Clifford-authored RB circuits and estimate survival decay.
+- Depth-limit workflows: `depth_limits.py` sweeps circuit families by width
+  and depth and reports the largest depth meeting a quality threshold.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -1084,6 +1091,47 @@ Common run patterns:
     --edges QB1-QB2,QB4-QB5 \
     --lengths 1,2,4 \
     --sequences 4 \
+    --json
+```
+
+### `qhw_depth_limits.sh` / `scripts/depth_limits.py`
+
+`depth_limits.py` sweeps circuit families over selected widths and depths to
+estimate when output quality falls below a useful threshold. The current
+families are `ghz`, `mirror`, and `hardware_efficient`. The script computes an
+ideal distribution locally when the width is not larger than
+`--max-ideal-width`, submits the measured circuit through the selected backend,
+and compares observed counts against the ideal distribution using Hellinger
+fidelity.
+
+The primary output is the largest tested depth that stays above
+`--quality-threshold` for each family and width. This is a practical
+acceptance-style metric rather than a complete noise model. Use narrower
+widths or increase `--max-ideal-width` when exact local ideal simulation is
+needed for wider circuits.
+
+Outputs include `results/depth_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/depth_limits_summary.json`.
+
+Common run patterns:
+
+```bash
+# Quick dry-run over two widths and two depths.
+./qhw_depth_limits.sh \
+    --dry-run \
+    --qubits QB1,QB2,QB3,QB4 \
+    --widths 1,2 \
+    --families ghz,mirror \
+    --depths 1,2 \
+    --json
+
+# Short hardware run.
+./qhw_depth_limits.sh \
+    --qubits QB1,QB2,QB3,QB4 \
+    --widths 1,2,4 \
+    --families ghz,mirror \
+    --depths 1,2,4,8 \
+    --quality-threshold 0.5 \
     --json
 ```
 
