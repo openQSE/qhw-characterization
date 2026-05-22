@@ -68,6 +68,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_rb_1q.sh --qubits QB1,QB2 --lengths 1,2,4,8 --sequences 4 --json
 ./qhw_rb_2q.sh --max-edges 2 --lengths 1,2,4 --sequences 2 --json
 ./qhw_depth_limits.sh --widths 1,2,4 --depths 1,2,4 --json
+./qhw_crosstalk.sh --max-pairs 2 --gate-depths 0,8 --json
 ```
 
 To force direct mode:
@@ -86,6 +87,7 @@ To force direct mode:
 ./qhw_rb_1q.sh --backend direct --qubits QB1 --lengths 1,2,4 --json
 ./qhw_rb_2q.sh --backend direct --max-edges 1 --lengths 1,2 --json
 ./qhw_depth_limits.sh --backend direct --widths 1,2 --depths 1,2 --json
+./qhw_crosstalk.sh --backend direct --pairs QB1-QB2 --json
 ```
 
 To run the current suite in one QFw session:
@@ -168,6 +170,8 @@ QHW_RUN_ALL_RB_2Q_SEQUENCES=2
 QHW_RUN_ALL_DEPTH_QUBITS=QB1,QB2,QB3,QB4
 QHW_RUN_ALL_DEPTH_WIDTHS=1,2,4
 QHW_RUN_ALL_DEPTH_DEPTHS=1,2,4
+QHW_RUN_ALL_CROSSTALK_MAX_PAIRS=2
+QHW_RUN_ALL_CROSSTALK_GATE_DEPTHS=0,8
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -456,6 +460,8 @@ The suite intentionally contains more than one workflow style:
   Clifford-authored RB circuits and estimate survival decay.
 - Depth-limit workflows: `depth_limits.py` sweeps circuit families by width
   and depth and reports the largest depth meeting a quality threshold.
+- Crosstalk workflows: `crosstalk.py` runs bounded spectator-state checks on
+  coupling-graph pairs and reports target-error deltas.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -1132,6 +1138,49 @@ Common run patterns:
     --families ghz,mirror \
     --depths 1,2,4,8 \
     --quality-threshold 0.5 \
+    --json
+```
+
+### `qhw_crosstalk.sh` / `scripts/crosstalk.py`
+
+`crosstalk.py` runs bounded spectator tests over selected coupling-graph
+pairs. For each target/spectator pair, it compares target error when the
+spectator is prepared in `0` versus `1`. `--gate-depths 0` runs a pure
+prepare/measure readout-spectator check. Positive gate depths run a target
+echo sequence before measurement, which is useful for detecting spectator
+state effects during local gate activity.
+
+The script intentionally samples pairs by default. Full pairwise crosstalk can
+grow quickly, so use `--max-pairs`, `--pairs`, and `--bidirectional` to choose
+the coverage. Cases whose absolute target-error delta exceeds
+`--delta-threshold` are listed under `flagged` in the analysis.
+
+Outputs include `coupling_graph.qhw.json`, `selected_pairs.json`,
+`results/crosstalk_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/crosstalk_summary.json`.
+
+Common run patterns:
+
+```bash
+# Quick dry-run over one sampled pair.
+./qhw_crosstalk.sh \
+    --dry-run \
+    --max-pairs 1 \
+    --gate-depths 0,8 \
+    --json
+
+# Explicit pair run.
+./qhw_crosstalk.sh \
+    --pairs QB1-QB2,QB3-QB4 \
+    --gate-depths 0,8,16 \
+    --shots 1000 \
+    --json
+
+# Check both directions of sampled edges.
+./qhw_crosstalk.sh \
+    --max-pairs 4 \
+    --bidirectional \
+    --gate-depths 0,8 \
     --json
 ```
 

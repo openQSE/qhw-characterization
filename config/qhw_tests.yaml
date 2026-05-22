@@ -337,3 +337,29 @@ tests:
         - --shots
         - env: QHW_RUN_ALL_DEPTH_SHOTS
           default: "1000"
+
+  - name: crosstalk
+    level: l2
+    script: scripts/crosstalk.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      l2:
+        - --max-pairs
+        - env: QHW_RUN_ALL_CROSSTALK_MAX_PAIRS
+          default: "2"
+        - --gate-depths
+        - env: QHW_RUN_ALL_CROSSTALK_GATE_DEPTHS
+          default: 0,8
+        - --shots
+        - env: QHW_RUN_ALL_CROSSTALK_SHOTS
+          default: "1000"
+        - --repetitions
+        - env: QHW_RUN_ALL_CROSSTALK_REPETITIONS
+          default: "1"
