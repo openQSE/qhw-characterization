@@ -14,6 +14,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from qhw_util.output import backend_result_qhw
+from qhw_util.output import qhw_json_path
 from qhw_util.output import to_jsonable
 from qhw_util.schema import qhw_device_qubits
 from qhw_util.workflow import WorkflowContext
@@ -235,7 +236,7 @@ def main() -> int:
 	widths = resolve_widths(args.widths, active_qubits, args.dry_run)
 
 	backend_info_file = ctx.paths.root / "backend_info.json"
-	device_info_file = ctx.paths.root / "device_info.json"
+	device_info_file = qhw_json_path(ctx.paths.root, "device_info")
 	records_file = ctx.paths.results / "timing_records.jsonl"
 	summary_file = ctx.paths.results / "timing_summary.json"
 	ctx.write_json(backend_info_file, backend_info)

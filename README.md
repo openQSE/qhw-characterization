@@ -435,6 +435,10 @@ provider-native payload as `*.raw.json` and the provider-neutral
 `qhw-result-v1` payload as `*.qhw.json`. The scripts use the normalized qhw
 payload for timing analysis so the output does not depend on a private
 workflow timing format.
+Provider-neutral qhw metadata uses the same naming convention. Device,
+calibration, coupling, and result schema payloads are written as
+`*.qhw.json`; provider-native payloads are written as `*.raw.json`; workflow
+summaries and derived analysis remain plain `*.json`.
 
 This keeps each workflow focused on the experiment design:
 
@@ -485,9 +489,10 @@ Typical use:
 `discover.py` captures the machine description needed for later
 characterization and reporting. It collects backend metadata, dynamic
 architecture metadata, the calibration snapshot, the quality metric snapshot,
-and the coupling graph. The script writes `device_snapshot.json`,
-`calibration_snapshot.json`, `calibration_quality_summary.json`, and
-`coupling_graph.json`.
+and the coupling graph. The script writes the mixed workflow snapshot as
+`device_snapshot.json`, qhw schema payloads as `device_info.qhw.json`,
+`calibration_snapshot.qhw.json`, and `coupling_graph.qhw.json`, and the
+derived quality summary as `calibration_quality_summary.json`.
 
 The coupling graph is derived from the device architecture and dynamic gate
 loci. This makes the output useful even when the provider API does not expose a
@@ -556,22 +561,29 @@ Typical use:
 
 `timing_1q.py` implements the single-qubit gate duration test from the
 characterization plan. It uses Qiskit to author one-qubit circuits, repeats a
-selected gate at each requested depth, maps logical qubit 0 to the requested
-physical IQM qubit, submits the serialized circuit through the common backend
-path, and records timing data for each run.
+fixed gate sequence at each requested depth, maps logical qubit 0 to the
+requested physical qubit, submits the serialized circuit through the common
+backend path, and records timing data for each run.
 
 The supported gate probes are `x`, `rx`, and `ry`. On IQM hardware these probe
 the native PRX family through different Qiskit source gates and phases. The
-default gate set is `rx,ry`, the default depth sweep is
+default gate sequence is `rx,ry`, the default depth sweep is
 `1,2,4,8,16,32,64,128`, and the default qubit set is `all` active qubits
 reported by the backend. Use `--angle` to change the RX/RY angle, `--shots` to
-set the shot count, and `--repetitions` to repeat each qubit/gate/depth point.
+set the shot count, and `--repetitions` to repeat each qubit/depth point. The
+sequence form reduces the chance that a compiler removes a long run of
+identical self-inverting gates before hardware timing is measured.
 
-For each point, the script writes the generated QASM artifact, the raw result
+Before the depth sweep, the script runs single-gate baseline circuits for each
+selected physical qubit and each gate in the sequence. The analysis uses those
+baselines to calculate an expected execution time for every depth point and
+reports observed-minus-expected residuals. For each point, the script writes
+the generated QASM artifact, normalized result payload, optional raw provider
 payload, and a JSON-lines timing record. The post-processing step then writes
 `results/analysis.json`, `results/analysis.md`, and plots under
-`results/plots/`. The analysis explains whether IQM-reported execution time
-per shot appears to increase linearly as repeated 1Q gate depth increases.
+`results/plots/`. The analysis explains whether provider-reported execution
+time per shot appears to increase linearly as repeated 1Q sequence depth
+increases.
 
 The primary hardware metric is `execution_per_shot_seconds`. It uses the IQM
 timeline interval from `execution_started` to `execution_ended`, divided by the
@@ -582,7 +594,7 @@ overhead.
 
 The generated plots show depth on the x-axis and IQM execution time per shot on
 the y-axis. The default plot set includes one plot per gate across all selected
-physical qubits, one plot per physical qubit across all selected gates,
+physical qubits, one plot per physical qubit across the selected sequence,
 fit-residual plots per gate, and a heatmap of fitted slope by gate and qubit.
 If `matplotlib` is not installed, the script still completes and records that
 plot generation was skipped in the analysis files.
@@ -647,7 +659,7 @@ for the interleaved layer.
 
 For each point, the script writes the generated QASM artifact, the normalized
 result, optional raw provider result, and a JSON-lines timing record. It also
-writes `coupling_graph.json`, `selected_pairs.json`,
+writes `coupling_graph.qhw.json`, `selected_pairs.json`,
 `results/timing_summary.json`, `results/analysis.json`,
 `results/analysis.md`, and plots under `results/plots/` when `matplotlib` is
 available.

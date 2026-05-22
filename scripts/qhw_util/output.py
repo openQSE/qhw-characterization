@@ -10,6 +10,8 @@ from uuid import UUID
 import json
 
 RAW_PROVIDER_KEY = "_raw_provider"
+QHW_JSON_SUFFIX = ".qhw.json"
+RAW_JSON_SUFFIX = ".raw.json"
 
 
 @dataclass(frozen=True)
@@ -57,11 +59,28 @@ def write_json(path: Path, data: Any) -> None:
 	payload = to_jsonable(data)
 	if isinstance(payload, dict) and RAW_PROVIDER_KEY in payload:
 		raw_payload = payload.pop(RAW_PROVIDER_KEY)
-		raw_path = path.with_suffix(".raw.json")
+		raw_path = artifact_variant_path(path, RAW_JSON_SUFFIX)
 		raw_path.write_text(json.dumps(
 			raw_payload, indent=2, sort_keys=True))
 	payload = strip_internal_keys(payload)
 	path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def artifact_variant_path(path: Path, suffix: str) -> Path:
+	"""Return a sibling artifact path with the repository naming suffix."""
+	return path.with_name(f"{path.stem}{suffix}")
+
+
+def qhw_json_path(directory: Path, name: str) -> Path:
+	"""Return the standard path for a normalized qhw schema artifact."""
+	return directory / f"{name}{QHW_JSON_SUFFIX}"
+
+
+def write_qhw_json(directory: Path, name: str, data: Any) -> Path:
+	"""Write a normalized qhw schema artifact using the standard name."""
+	path = qhw_json_path(directory, name)
+	write_json(path, data)
+	return path
 
 
 def backend_result_qhw(data: Any) -> dict[str, Any]:
@@ -93,12 +112,12 @@ def write_backend_result_artifacts(path: Path, data: Any) -> dict[str, str]:
 	files = {}
 
 	if raw_payload:
-		raw_path = path.with_suffix(".raw.json")
+		raw_path = artifact_variant_path(path, RAW_JSON_SUFFIX)
 		raw_path.write_text(json.dumps(raw_payload, indent=2, sort_keys=True))
 		files["raw"] = str(raw_path)
 
 	if qhw_payload:
-		qhw_path = path.with_suffix(".qhw.json")
+		qhw_path = artifact_variant_path(path, QHW_JSON_SUFFIX)
 		qhw_path.write_text(json.dumps(
 			strip_internal_keys(qhw_payload), indent=2, sort_keys=True))
 		files["qhw"] = str(qhw_path)

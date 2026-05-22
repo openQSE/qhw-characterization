@@ -19,6 +19,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from qhw_util.output import backend_result_qhw
+from qhw_util.output import qhw_json_path
 from qhw_util.output import to_jsonable
 from qhw_util.schema import qhw_coupling_edges
 from qhw_util.schema import qhw_coupling_nodes
@@ -1078,7 +1079,7 @@ def main() -> int:
 			max_non_connected)
 
 	backend_info_file = ctx.paths.root / "backend_info.json"
-	coupling_graph_file = ctx.paths.root / "coupling_graph.json"
+	coupling_graph_file = qhw_json_path(ctx.paths.root, "coupling_graph")
 	selected_pairs_file = ctx.paths.root / "selected_pairs.json"
 	baseline_1q_records_file = ctx.paths.results / "baseline_1q_records.jsonl"
 	baseline_2q_records_file = ctx.paths.results / "baseline_2q_records.jsonl"

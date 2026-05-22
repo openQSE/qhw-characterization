@@ -16,8 +16,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from qhw_util.output import backend_result_qhw
+from qhw_util.output import qhw_json_path
 from qhw_util.output import to_jsonable
 from qhw_util.schema import qhw_device_qubits
+from qhw_util.timing_model import execution_per_shot
+from qhw_util.timing_model import expected_model_summary
+from qhw_util.timing_model import one_q_baseline_table
+from qhw_util.timing_model import one_q_sequence_model
+from qhw_util.timing_model import sequence_key
 from qhw_util.workflow import WorkflowContext
 
 SUPPORTED_GATES = ("x", "rx", "ry")
@@ -29,7 +35,14 @@ DIAGNOSTIC_METRICS = (
 )
 
 
-def dry_run_result(cid: str, shots: int) -> dict[str, Any]:
+def dry_run_result(cid: str, shots: int,
+		   execution_seconds: float | None = None) -> dict[str, Any]:
+	durations = {}
+	if execution_seconds is not None:
+		durations = {
+			"execution_seconds": execution_seconds,
+			"provider_total_seconds": execution_seconds,
+		}
 	return {
 		"cid": cid,
 		"result": {
@@ -45,7 +58,7 @@ def dry_run_result(cid: str, shots: int) -> dict[str, Any]:
 					"success": True,
 				},
 				"timing": {"timestamps": {}, "timeline": [],
-					   "durations_seconds": {}},
+					   "durations_seconds": durations},
 				"errors": [],
 				"extensions": {},
 				"raw": {"included": False, "format": None, "artifacts": []},
@@ -111,7 +124,19 @@ def resolve_qubits(value: str, active_qubits: list[Any],
 	return qubits
 
 
-def build_gate_circuit(gate: str, depth: int, angle: float, name: str):
+def apply_1q_gate(circuit, gate: str, qubit: int, angle: float) -> None:
+	if gate == "x":
+		circuit.x(qubit)
+	elif gate == "rx":
+		circuit.rx(angle, qubit)
+	elif gate == "ry":
+		circuit.ry(angle, qubit)
+	else:
+		raise ValueError(f"unsupported gate {gate!r}")
+
+
+def build_gate_circuit(gate_sequence: list[str], depth: int,
+		       angle: float, name: str):
 	try:
 		from qiskit import QuantumCircuit
 	except Exception as exc:
@@ -120,16 +145,21 @@ def build_gate_circuit(gate: str, depth: int, angle: float, name: str):
 
 	circuit = QuantumCircuit(1, 1, name=name)
 	for _ in range(depth):
-		if gate == "x":
-			circuit.x(0)
-		elif gate == "rx":
-			circuit.rx(angle, 0)
-		elif gate == "ry":
-			circuit.ry(angle, 0)
-		else:
-			raise ValueError(f"unsupported gate {gate!r}")
+		for gate in gate_sequence:
+			apply_1q_gate(circuit, gate, 0, angle)
 	circuit.measure(0, 0)
 	return circuit
+
+
+def dry_run_1q_execution_seconds(gate_sequence: list[str],
+				 depth: int, shots: int) -> float:
+	per_gate = {
+		"x": 0.00055,
+		"rx": 0.00070,
+		"ry": 0.00075,
+	}
+	per_shot = depth * sum(per_gate[gate] for gate in gate_sequence)
+	return shots * per_shot
 
 
 def extract_metrics(script_wall_seconds: float, result: dict[str, Any],
@@ -287,19 +317,19 @@ def classify_fit(fit: dict[str, Any] | None) -> dict[str, Any]:
 		status = "approximately_linear_positive"
 		conclusion = (
 			"Hardware execution time per shot increases approximately linearly "
-			"with repeated 1Q gate depth for this group.")
+			"with repeated 1Q sequence depth for this group.")
 	elif fit["slope_seconds_per_gate"] > 0:
 		status = "positive_but_noisy"
 		conclusion = (
 			"Hardware execution time per shot increases with depth, but the "
 			"linear fit residuals are large enough that repeated runs or "
 			"deeper circuits are needed before using the slope as a stable "
-			"gate-duration estimate.")
+			"sequence-duration estimate.")
 	else:
 		status = "not_linear_positive"
 		conclusion = (
 			"The fitted slope is not positive, so this run does not support "
-			"a linear per-gate timing model for this group.")
+			"a linear per-sequence timing model for this group.")
 
 	return {
 		"status": status,
@@ -386,8 +416,8 @@ def build_analysis(records: list[dict[str, Any]],
 		"schema": "qhw-1q-analysis-v1",
 		"intent": (
 			"Determine whether hardware execution time increases linearly as "
-			"more gates of the same 1Q type are added to a one-qubit "
-			"circuit."),
+			"more repetitions of a fixed 1Q gate sequence are added to a "
+			"one-qubit circuit."),
 		"primary_metric": PRIMARY_METRIC,
 		"primary_metric_definition": (
 			"Provider timeline execution duration divided by shots. The "
@@ -410,9 +440,11 @@ def build_analysis(records: list[dict[str, Any]],
 		"by_gate_qubit": by_gate_qubit,
 		"by_gate": by_gate,
 		"by_qubit": by_qubit,
+		"expected_model_summary": expected_model_summary(records),
 		"plots": plots,
 		"caveats": [
-			"Repeated gates can be simplified or transformed by compilation.",
+			"The script uses a repeated gate sequence instead of a single "
+			"repeated gate to reduce compiler cancellation opportunities.",
 			"Client wall time and server total time include non-hardware "
 			"overheads and are not used for the primary hardware timing "
 			"conclusion.",
@@ -545,7 +577,7 @@ def plot_records(records: list[dict[str, Any]],
 	if slope_rows and qubits:
 		plt.figure(figsize=(max(8, len(qubits) * 0.35), max(3, len(gates) * 0.8)))
 		image = plt.imshow(slope_rows, aspect="auto")
-		plt.colorbar(image, label="Slope (s/gate/shot)")
+		plt.colorbar(image, label="Slope (s/depth/shot)")
 		plt.xticks(range(len(qubits)), qubits, rotation=90)
 		plt.yticks(range(len(gates)), gates)
 		plt.title("1Q fitted execution-time slope")
@@ -596,7 +628,7 @@ def render_analysis_markdown(analysis: dict[str, Any]) -> str:
 		"",
 		"## Gate/Qubit Fits",
 		"",
-		"| Gate/Qubit | Status | Points | Slope (s/gate/shot) | RMS residual (s) | Conclusion |",
+		"| Gate/Qubit | Status | Points | Slope (s/depth/shot) | RMS residual (s) | Conclusion |",
 		"| --- | --- | ---: | ---: | ---: | --- |",
 	]
 	for key, item in analysis["by_gate_qubit"].items():
@@ -608,6 +640,24 @@ def render_analysis_markdown(analysis: dict[str, Any]) -> str:
 			f"{fit.get('slope_seconds_per_gate', '')} | "
 			f"{fit.get('rms_residual_seconds', '')} | "
 			f"{classification['conclusion']} |")
+
+	lines += [
+		"",
+		"## Baseline Model Residuals",
+		"",
+		"| Residual | Samples | Mean error (s/shot) | Mean absolute error (s/shot) | RMS error (s/shot) |",
+		"| --- | ---: | ---: | ---: | ---: |",
+	]
+	model_summary = analysis.get("expected_model_summary", {})
+	if model_summary:
+		for key, item in model_summary.items():
+			lines.append(
+				f"| `{key}` | {item['count']} | "
+				f"{item['mean_error_seconds']} | "
+				f"{item['mean_absolute_error_seconds']} | "
+				f"{item['rms_error_seconds']} |")
+	else:
+		lines.append("| none | 0 |  |  |  |")
 
 	lines += [
 		"",
@@ -679,7 +729,8 @@ def main() -> int:
 	qubits = resolve_qubits(args.qubits, active_qubits, args.dry_run)
 
 	backend_info_file = ctx.paths.root / "backend_info.json"
-	device_info_file = ctx.paths.root / "device_info.json"
+	device_info_file = qhw_json_path(ctx.paths.root, "device_info")
+	baseline_records_file = ctx.paths.results / "baseline_records.jsonl"
 	records_file = ctx.paths.results / "timing_records.jsonl"
 	summary_file = ctx.paths.results / "timing_summary.json"
 	analysis_file = ctx.paths.results / "analysis.json"
@@ -688,77 +739,161 @@ def main() -> int:
 	ctx.write_json(backend_info_file, backend_info)
 	ctx.write_json(device_info_file, device_info)
 
-	records = []
+	baseline_records = []
 	for repetition in range(args.repetitions):
 		for qubit in qubits:
 			for gate in args.gates:
-				for depth in args.depths:
-					cid = (
-						f"1q_{qubit}_{gate}_d{depth}_"
-						f"s{args.shots}_r{repetition}")
-					circuit = build_gate_circuit(
-						gate, depth, args.angle, cid)
+				cid = (
+					f"baseline_1q_{qubit}_{gate}_"
+					f"s{args.shots}_r{repetition}")
+				circuit = build_gate_circuit([gate], 1, args.angle, cid)
+				start = time.monotonic()
+				try:
+					if args.dry_run:
+						qasm_files = ctx.write_qasm_artifacts(
+							[circuit], cid)
+						result = dry_run_result(
+							cid,
+							args.shots,
+							dry_run_1q_execution_seconds(
+								[gate], 1, args.shots))
+						run = ctx.write_backend_result(
+							cid, result, qasm_files)
+					else:
+						run = ctx.run_circuit(
+							[circuit],
+							name=cid,
+							shots=args.shots,
+							qubit_mapping={0: qubit},
+						)
+						result = run.result
+					ok = run.ok
+					error = None
+				except Exception as exc:
+					result = {"rc": 1, "error": str(exc)}
+					run = None
+					ok = False
+					error = str(exc)
+				wall = time.monotonic() - start
+				qhw_result = backend_result_qhw(result)
+				qhw_payload = qhw_result.get("result", {})
+				baseline_records.append({
+					"experiment": "single_qubit_gate_baseline",
+					"ok": ok,
+					"error": error,
+					"repetition": repetition,
+					"physical_qubit": qubit,
+					"logical_qubits": 1,
+					"gate": gate,
+					"angle_radians": args.angle,
+					"depth": 1,
+					"shots": args.shots,
+					"backend_mode": args.backend if args.dry_run
+					else ctx.backend.name,
+					"source": "qiskit",
+					"submission_path": "backend.run",
+					"qubit_mapping": {"0": qubit},
+					"qasm_file": run.files.get("qasm") if run else None,
+					"result_file": run.files.get("result") if run else None,
+					"raw_result_file": run.files.get("raw_result") if run else None,
+					"normalized_result_file": (
+						run.files.get("normalized_result") if run else None),
+					"job_ids": result_job_ids(result) if run else [],
+					"counts": qhw_payload.get("counts")
+					if isinstance(qhw_payload, dict) else None,
+					"metrics": extract_metrics(
+						wall, result, args.shots) if run else {},
+				})
 
-					start = time.monotonic()
-					try:
-						if args.dry_run:
-							qasm_files = ctx.write_qasm_artifacts(
-								[circuit], cid)
-							result = dry_run_result(cid, args.shots)
-							run = ctx.write_backend_result(
-								cid, result, qasm_files)
-						else:
-							run = ctx.run_circuit(
-								[circuit],
-								name=cid,
-								shots=args.shots,
-								qubit_mapping={0: qubit},
-							)
-							result = run.result
-						ok = run.ok
-						error = None
-					except Exception as exc:
-						result = {"rc": 1, "error": str(exc)}
-						run = None
-						ok = False
-						error = str(exc)
-					wall = time.monotonic() - start
-					qhw_result = backend_result_qhw(result)
-					qhw_payload = qhw_result.get("result", {})
+	baselines = one_q_baseline_table(baseline_records)
 
-					records.append({
-						"experiment": "single_qubit_gate_timing",
-						"ok": ok,
-						"error": error,
-						"repetition": repetition,
-						"physical_qubit": qubit,
-						"logical_qubits": 1,
-						"gate": gate,
-						"angle_radians": args.angle,
-						"depth": depth,
-						"shots": args.shots,
-						"backend_mode": args.backend if args.dry_run
-						else ctx.backend.name,
-						"source": "qiskit",
-						"submission_path": "backend.run",
-						"qubit_mapping": {"0": qubit},
-						"qasm_file": run.files.get("qasm") if run else None,
-						"result_file": run.files.get("result") if run else None,
-						"raw_result_file": run.files.get("raw_result") if run else None,
-						"normalized_result_file": (
-							run.files.get("normalized_result") if run else None),
-						"job_ids": result_job_ids(result) if run else [],
-						"counts": qhw_payload.get("counts")
-						if isinstance(qhw_payload, dict) else None,
-						"metrics": extract_metrics(
-							wall, result, args.shots) if run else {},
-					})
+	records = []
+	gate_sequence = list(args.gates)
+	gate_sequence_key = sequence_key(gate_sequence)
+	for repetition in range(args.repetitions):
+		for qubit in qubits:
+			for depth in args.depths:
+				cid = (
+					f"1q_{qubit}_{gate_sequence_key}_d{depth}_"
+					f"s{args.shots}_r{repetition}")
+				circuit = build_gate_circuit(
+					gate_sequence, depth, args.angle, cid)
 
+				start = time.monotonic()
+				try:
+					if args.dry_run:
+						qasm_files = ctx.write_qasm_artifacts(
+							[circuit], cid)
+						result = dry_run_result(
+							cid,
+							args.shots,
+							dry_run_1q_execution_seconds(
+								gate_sequence, depth, args.shots))
+						run = ctx.write_backend_result(
+							cid, result, qasm_files)
+					else:
+						run = ctx.run_circuit(
+							[circuit],
+							name=cid,
+							shots=args.shots,
+							qubit_mapping={0: qubit},
+						)
+						result = run.result
+					ok = run.ok
+					error = None
+				except Exception as exc:
+					result = {"rc": 1, "error": str(exc)}
+					run = None
+					ok = False
+					error = str(exc)
+				wall = time.monotonic() - start
+				qhw_result = backend_result_qhw(result)
+				qhw_payload = qhw_result.get("result", {})
+				metrics = extract_metrics(
+					wall, result, args.shots) if run else {}
+
+				records.append({
+					"experiment": "single_qubit_gate_timing",
+					"ok": ok,
+					"error": error,
+					"repetition": repetition,
+					"physical_qubit": qubit,
+					"logical_qubits": 1,
+					"gate": gate_sequence_key,
+					"gate_sequence": gate_sequence,
+					"sequence_repetitions": depth,
+					"sequence_gate_count": depth * len(gate_sequence),
+					"angle_radians": args.angle,
+					"depth": depth,
+					"shots": args.shots,
+					"backend_mode": args.backend if args.dry_run
+					else ctx.backend.name,
+					"source": "qiskit",
+					"submission_path": "backend.run",
+					"qubit_mapping": {"0": qubit},
+					"qasm_file": run.files.get("qasm") if run else None,
+					"result_file": run.files.get("result") if run else None,
+					"raw_result_file": run.files.get("raw_result") if run else None,
+					"normalized_result_file": (
+						run.files.get("normalized_result") if run else None),
+					"job_ids": result_job_ids(result) if run else [],
+					"counts": qhw_payload.get("counts")
+					if isinstance(qhw_payload, dict) else None,
+					"metrics": metrics,
+					"expected": one_q_sequence_model(
+						baselines,
+						qubit,
+						gate_sequence,
+						depth,
+						execution_per_shot(metrics)),
+				})
+
+	write_jsonl(baseline_records_file, baseline_records)
 	write_jsonl(records_file, records)
 	config = {
 		"qubits": qubits,
-		"gates": args.gates,
-		"gate_model": "Qiskit 1Q x/rx/ry gates",
+		"gate_sequence": gate_sequence,
+		"gate_model": "Repeated Qiskit 1Q x/rx/ry gate sequence",
 		"depths": args.depths,
 		"shots": args.shots,
 		"repetitions": args.repetitions,
@@ -792,6 +927,7 @@ def main() -> int:
 		"files": {
 			"backend_info": str(backend_info_file),
 			"device_info": str(device_info_file),
+			"baseline_records": str(baseline_records_file),
 			"timing_records": str(records_file),
 			"timing_summary": str(summary_file),
 			"analysis_json": str(analysis_file),

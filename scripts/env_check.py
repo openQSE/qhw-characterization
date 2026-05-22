@@ -18,6 +18,7 @@ from qhw_util.output import render_text_output
 from qhw_util.output import script_output_path
 from qhw_util.output import to_jsonable
 from qhw_util.output import write_json
+from qhw_util.output import write_qhw_json
 from qhw_util.output import write_script_output
 from qhw_util.schema import qhw_device_summary
 
@@ -66,7 +67,10 @@ def main() -> int:
 
 	output_file = paths.root / "env_check.json"
 	write_json(output_file, result)
+	device_info_file = write_qhw_json(
+		paths.root, "device_info", result["device_info"])
 	result["output_file"] = str(output_file)
+	result["device_info_file"] = str(device_info_file)
 	result["script_output_file"] = str(script_output_path(paths, args.json))
 
 	if args.json:
