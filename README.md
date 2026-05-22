@@ -64,6 +64,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_parallel_1q.sh --widths 1,2,4 --depths 1,2,4 --json
 ./qhw_parallel_2q.sh --matching-sizes 1,2 --depths 1,2,4 --json
 ./qhw_readout.sh --qubits QB1,QB2 --widths 1,2 --json
+./qhw_coherence.sh --qubits QB1,QB2 --delays-us 1,2,4,8 --json
 ```
 
 To force direct mode:
@@ -78,6 +79,7 @@ To force direct mode:
 ./qhw_parallel_1q.sh --backend direct --widths 1,2 --json
 ./qhw_parallel_2q.sh --backend direct --matching-sizes 1,2 --json
 ./qhw_readout.sh --backend direct --qubits QB1,QB2 --json
+./qhw_coherence.sh --backend direct --qubits QB1 --experiments t1 --json
 ```
 
 To run the current suite in one QFw session:
@@ -148,6 +150,9 @@ QHW_RUN_ALL_1Q_DEPTHS=1,2,4,8,16,32,64,128
 QHW_RUN_ALL_READOUT_QUBITS=QB1,QB2,QB3,QB4
 QHW_RUN_ALL_READOUT_WIDTHS=1,2,4
 QHW_RUN_ALL_READOUT_ASSIGNMENT_WIDTHS=1,2
+QHW_RUN_ALL_COHERENCE_QUBITS=QB1,QB2,QB3,QB4
+QHW_RUN_ALL_COHERENCE_EXPERIMENTS=t1,ramsey,echo
+QHW_RUN_ALL_COHERENCE_DELAYS_US=1,2,4,8,16,32
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -430,6 +435,8 @@ The suite intentionally contains more than one workflow style:
   post-process timing telemetry.
 - Characterization workflows: `readout.py` submits Qiskit-authored basis
   preparation circuits and post-processes assignment error and readout scaling.
+- Coherence workflows: `coherence.py` submits delay-based Qiskit circuits and
+  estimates T1-like and T2-like decay trends from returned counts.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -930,6 +937,53 @@ Common run patterns:
     --qubits all \
     --widths 1,2,4,max \
     --shots 1000 \
+    --json
+```
+
+### `qhw_coherence.sh` / `scripts/coherence.py`
+
+`coherence.py` runs delay-sweep circuits that estimate decay behavior from
+measurement probabilities. It supports three experiment families: `t1`,
+`ramsey`, and `echo`. Each circuit maps logical qubit 0 to the selected
+physical qubit, inserts the requested delay, measures the result, and records
+the normalized qhw result artifact.
+
+The script is intentionally a characterization workflow rather than a
+calibration replacement. The T1 family tracks excited-state survival versus
+delay. The Ramsey and echo families track contrast around 0.5 versus delay and
+fit a simple exponential envelope. Provider-native calibration values remain
+available through `qhw_discover.sh`; this script verifies decay behavior by
+submitting circuits through the same execution path used by applications.
+
+Outputs include `results/coherence_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/coherence_summary.json`. Each per-circuit
+run also writes its generated QASM and normalized qhw result.
+
+Common run patterns:
+
+```bash
+# Quick dry-run with small delay sweep.
+./qhw_coherence.sh \
+    --dry-run \
+    --qubits QB1,QB2 \
+    --experiments t1,echo \
+    --delays-us 1,2,4,8 \
+    --json
+
+# Short hardware run on selected qubits.
+./qhw_coherence.sh \
+    --qubits QB1,QB2 \
+    --experiments t1,ramsey,echo \
+    --delays-us 1,2,4,8,16,32 \
+    --shots 1000 \
+    --json
+
+# Direct IQM T1-only run.
+./qhw_coherence.sh \
+    --backend direct \
+    --qubits QB1 \
+    --experiments t1 \
+    --delays-us 1,2,4,8,16,32,64 \
     --json
 ```
 
