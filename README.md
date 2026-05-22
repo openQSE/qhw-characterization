@@ -66,6 +66,7 @@ the workflow implementation through `qfw_srun.sh`, and tears QFw down.
 ./qhw_readout.sh --qubits QB1,QB2 --widths 1,2 --json
 ./qhw_coherence.sh --qubits QB1,QB2 --delays-us 1,2,4,8 --json
 ./qhw_rb_1q.sh --qubits QB1,QB2 --lengths 1,2,4,8 --sequences 4 --json
+./qhw_rb_2q.sh --max-edges 2 --lengths 1,2,4 --sequences 2 --json
 ```
 
 To force direct mode:
@@ -82,6 +83,7 @@ To force direct mode:
 ./qhw_readout.sh --backend direct --qubits QB1,QB2 --json
 ./qhw_coherence.sh --backend direct --qubits QB1 --experiments t1 --json
 ./qhw_rb_1q.sh --backend direct --qubits QB1 --lengths 1,2,4 --json
+./qhw_rb_2q.sh --backend direct --max-edges 1 --lengths 1,2 --json
 ```
 
 To run the current suite in one QFw session:
@@ -158,6 +160,9 @@ QHW_RUN_ALL_COHERENCE_DELAYS_US=1,2,4,8,16,32
 QHW_RUN_ALL_RB_1Q_QUBITS=QB1,QB2
 QHW_RUN_ALL_RB_1Q_LENGTHS=1,2,4,8
 QHW_RUN_ALL_RB_1Q_SEQUENCES=2
+QHW_RUN_ALL_RB_2Q_MAX_EDGES=2
+QHW_RUN_ALL_RB_2Q_LENGTHS=1,2,4
+QHW_RUN_ALL_RB_2Q_SEQUENCES=2
 ```
 
 Larger timing campaigns should still be run explicitly with the desired shot
@@ -442,8 +447,8 @@ The suite intentionally contains more than one workflow style:
   preparation circuits and post-processes assignment error and readout scaling.
 - Coherence workflows: `coherence.py` submits delay-based Qiskit circuits and
   estimates T1-like and T2-like decay trends from returned counts.
-- Randomized benchmarking workflows: `rb_1q.py` submits Clifford-authored
-  single-qubit RB circuits and estimates survival decay.
+- Randomized benchmarking workflows: `rb_1q.py` and `rb_2q.py` submit
+  Clifford-authored RB circuits and estimate survival decay.
 
 The preferred direction is Qiskit-authored characterization workflows. The
 suite does not keep direct OpenQASM workflows because they bypass the common
@@ -1034,6 +1039,50 @@ Common run patterns:
     --backend direct \
     --qubits QB1 \
     --lengths 1,2,4,8 \
+    --sequences 4 \
+    --json
+```
+
+### `qhw_rb_2q.sh` / `scripts/rb_2q.py`
+
+`rb_2q.py` runs two-qubit randomized benchmarking style circuits on selected
+coupling graph edges. It asks the backend for normalized coupling data, samples
+or accepts explicit physical edges, generates Qiskit two-qubit Clifford
+sequences, appends the inverse Clifford, maps logical qubits 0 and 1 to the
+selected physical edge, and measures survival of the ideal `00` state.
+
+Use `--max-edges` to bound the matrix when the coupling graph is large, or
+`--edges QB1-QB2,QB3-QB4` to choose explicit physical edges. The sequence count
+and length sweep should be kept small for exploratory runs because each point
+submits a distinct circuit.
+
+Outputs include `coupling_graph.qhw.json`, `selected_edges.json`,
+`results/rb_2q_records.jsonl`, `results/analysis.json`,
+`results/analysis.md`, and `results/rb_2q_summary.json`.
+
+Common run patterns:
+
+```bash
+# Quick dry-run over one edge and two sequence lengths.
+./qhw_rb_2q.sh \
+    --dry-run \
+    --max-edges 1 \
+    --lengths 1,2 \
+    --sequences 2 \
+    --json
+
+# Short hardware run over sampled coupling edges.
+./qhw_rb_2q.sh \
+    --max-edges 2 \
+    --lengths 1,2,4,8 \
+    --sequences 4 \
+    --shots 1000 \
+    --json
+
+# Explicit edge selection.
+./qhw_rb_2q.sh \
+    --edges QB1-QB2,QB4-QB5 \
+    --lengths 1,2,4 \
     --sequences 4 \
     --json
 ```

@@ -282,3 +282,29 @@ tests:
         - --shots
         - env: QHW_RUN_ALL_RB_1Q_SHOTS
           default: "1000"
+
+  - name: rb_2q
+    level: l2
+    script: scripts/rb_2q.py
+    backend:
+      default: auto
+      direct:
+        provider: iqm
+      qfw:
+        type: hardware
+        capabilities:
+          - superconducting
+    args:
+      l2:
+        - --max-edges
+        - env: QHW_RUN_ALL_RB_2Q_MAX_EDGES
+          default: "2"
+        - --lengths
+        - env: QHW_RUN_ALL_RB_2Q_LENGTHS
+          default: 1,2,4
+        - --sequences
+        - env: QHW_RUN_ALL_RB_2Q_SEQUENCES
+          default: "2"
+        - --shots
+        - env: QHW_RUN_ALL_RB_2Q_SHOTS
+          default: "1000"
