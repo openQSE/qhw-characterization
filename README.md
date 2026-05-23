@@ -1,79 +1,23 @@
-# QFw-IQM
+# qhw-characterization
 
-QFw-IQM contains IQM-specific characterization workflows. The preferred path
-runs through the Quantum Framework, where QFw owns service startup, placement,
-and the reusable IQM QPM integration. The same Python workflows can also run
-directly through `iqm-client` for standalone characterization without QFw.
+`qhw-characterization` contains quantum hardware characterization workflows
+for discovery, smoke testing, timing, readout, coherence, randomized
+benchmarking, crosstalk, depth limits, QEC memory tests, and drift reporting.
+Workflows use a shared backend wrapper, write normalized `qhw-data` artifacts,
+and can run through configured backend profiles such as QFw or direct provider
+access.
 
-## Requirements
+## Run Directly
 
-For QFw-backed execution:
-
-- A configured QFw tree with the IQM QPM service available.
-- An activated QFw environment:
-
-```bash
-source /path/to/QFw/setup/qfw_activate
-```
-
-- IQM endpoint credentials exported in the shell that starts QFw:
-
-```bash
-export QFW_QC_URL="https://<iqm-endpoint>"
-export QFW_API_KEY="<api-key>"
-```
-
-Optional IQM settings:
-
-```bash
-export QHW_IQM_QUANTUM_COMPUTER="<machine-name>"
-export QHW_IQM_REQUEST_TIMEOUT=30
-export QHW_IQM_JOB_TIMEOUT=300
-```
-
-For direct execution without QFw:
-
-- The `iqm-client` Python package and its IQM dependencies.
-- The local `qhw-iqm` and `qhw-data` packages for normalized artifacts.
-- `QHW_IQM_URL` and `QHW_IQM_API_KEY` exported in the shell. The direct IQM
-  backend also accepts `QFW_QC_URL` and `QFW_API_KEY` as fallbacks so the same
-  shell can be used for QFw-backed and direct runs.
-
-Install the local Python requirements from this repository root:
+Install the Python requirements and export direct-provider credentials:
 
 ```bash
 python3 -m pip install -r requirements.txt
+export QHW_IQM_URL="https://<iqm-endpoint>"
+export QHW_IQM_API_KEY="<api-key>"
 ```
 
-## Workflows
-
-Each workflow supports `--backend auto|qfw|direct`. The default is `auto`.
-When QFw is activated, `auto` uses QFw. Otherwise, `auto` uses direct
-`iqm-client` access.
-
-In QFw mode, each wrapper starts QFw with `config/qhw_services.yaml`, runs
-the workflow implementation through `qfw_srun.sh`, and tears QFw down.
-
-```bash
-./qhw_env_check.sh --json
-./qhw_discover.sh --json
-./qhw_submit_smoke.sh --shots 100 --json
-./qhw_timing_overhead.sh --shots-sweep 1,10,100 --batch-sweep 1,2 --json
-./qhw_timing_1q.sh --qubits QB1,QB2 --gates rx,ry --depths 1,2,4 --json
-./qhw_timing_2q.sh --depths 1,2,4 --non-connected sample --json
-./qhw_parallel_1q.sh --widths 1,2,4 --depths 1,2,4 --json
-./qhw_parallel_2q.sh --matching-sizes 1,2 --depths 1,2,4 --json
-./qhw_readout.sh --qubits QB1,QB2 --widths 1,2 --json
-./qhw_coherence.sh --qubits QB1,QB2 --delays-us 1,2,4,8 --json
-./qhw_rb_1q.sh --qubits QB1,QB2 --lengths 1,2,4,8 --sequences 4 --json
-./qhw_rb_2q.sh --max-edges 2 --lengths 1,2,4 --sequences 2 --json
-./qhw_depth_limits.sh --widths 1,2,4 --depths 1,2,4 --json
-./qhw_crosstalk.sh --max-pairs 2 --gate-depths 0,8 --json
-./qhw_qec_memory.sh --distance 3 --rounds 3 --basis both --json
-./qhw_drift_report.sh --json
-```
-
-To force direct mode:
+Run individual workflows with `--backend direct`:
 
 ```bash
 ./qhw_env_check.sh --backend direct --json
@@ -93,57 +37,133 @@ To force direct mode:
 ./qhw_qec_memory.sh --backend direct --distance 3 --rounds 1 --basis z --json
 ```
 
-To run the current suite in one QFw session:
+## Run Through QFw
+
+Activate QFw and export the service credentials:
 
 ```bash
-./qhw_run_all.sh
+source /path/to/QFw/setup/qfw_activate
+export QFW_QC_URL="https://<iqm-endpoint>"
+export QFW_API_KEY="<api-key>"
 ```
 
-`qhw_run_all.sh` accepts a test level:
+Run individual workflows with `--backend qfw`:
 
 ```bash
-./qhw_run_all.sh --level smoke
-./qhw_run_all.sh --level l1
-./qhw_run_all.sh --level l2
-./qhw_run_all.sh --level qec
+./qhw_env_check.sh --backend qfw --json
+./qhw_discover.sh --backend qfw --json
+./qhw_submit_smoke.sh --backend qfw --shots 100 --json
+./qhw_timing_overhead.sh --backend qfw --shots-sweep 1,10,100 --json
+./qhw_timing_1q.sh --backend qfw --qubits QB1 --gates rx --json
+./qhw_timing_2q.sh --backend qfw --non-connected none --depths 1,2 --json
+./qhw_parallel_1q.sh --backend qfw --widths 1,2 --json
+./qhw_parallel_2q.sh --backend qfw --matching-sizes 1,2 --json
+./qhw_readout.sh --backend qfw --qubits QB1,QB2 --json
+./qhw_coherence.sh --backend qfw --qubits QB1 --experiments t1 --json
+./qhw_rb_1q.sh --backend qfw --qubits QB1 --lengths 1,2,4 --json
+./qhw_rb_2q.sh --backend qfw --max-edges 1 --lengths 1,2 --json
+./qhw_depth_limits.sh --backend qfw --widths 1,2 --depths 1,2 --json
+./qhw_crosstalk.sh --backend qfw --max-pairs 1 --json
+./qhw_qec_memory.sh --backend qfw --distance 3 --rounds 1 --basis z --json
 ```
 
-The positional form is also accepted:
+## Run The Suite
 
 ```bash
-./qhw_run_all.sh smoke
+./qhw_run_all.sh --backend direct --level smoke
+./qhw_run_all.sh --backend direct --level l1
+./qhw_run_all.sh --backend direct --level l2
 ```
 
-The default level is defined in `config/qhw_tests.yaml`. Set
-`QHW_RUN_ALL_LEVEL` to override that default.
+With QFw:
 
-The levels are:
+```bash
+./qhw_run_all.sh --backend qfw --level smoke
+./qhw_run_all.sh --backend qfw --level l1
+./qhw_run_all.sh --backend qfw --level l2
+```
+
+QEC is explicit because it is heavier and has stronger backend requirements:
+
+```bash
+./qhw_run_all.sh --backend direct --level qec
+./qhw_run_all.sh --backend qfw --level qec
+```
+
+Run the offline drift report after collecting discovery outputs:
+
+```bash
+./qhw_drift_report.sh --json
+```
+
+## Output Layout
+
+Output is written under:
+
+```text
+data/<YYYYMMDD>/<script-name>/<HHMMSS>/
+```
+
+Each workflow writes its terminal summary to the run's `results/` directory.
+With `--json`, the summary is stored in `results/stdout.json`. Without
+`--json`, the text summary is stored in `results/stdout.txt`. The terminal only
+prints the path to that saved output file.
+
+The `data/` directory is intentionally ignored by git.
+
+<details>
+<summary>Environment requirements and optional settings</summary>
+
+### QFw-backed execution with the current IQM service profile
+
+- A configured QFw tree with the IQM QPM service available.
+- An activated QFw environment.
+- IQM endpoint credentials exported in the shell that starts QFw.
+
+```bash
+source /path/to/QFw/setup/qfw_activate
+export QFW_QC_URL="https://<iqm-endpoint>"
+export QFW_API_KEY="<api-key>"
+```
+
+### Direct provider execution with the current IQM profile
+
+- The `iqm-client` Python package and its IQM dependencies.
+- The local `qhw-iqm` and `qhw-data` packages for normalized artifacts.
+- `QHW_IQM_URL` and `QHW_IQM_API_KEY` exported in the shell.
+
+```bash
+python3 -m pip install -r requirements.txt
+export QHW_IQM_URL="https://<iqm-endpoint>"
+export QHW_IQM_API_KEY="<api-key>"
+```
+
+### Optional IQM settings
+
+```bash
+export QHW_IQM_QUANTUM_COMPUTER="<machine-name>"
+export QHW_IQM_REQUEST_TIMEOUT=30
+export QHW_IQM_JOB_TIMEOUT=300
+```
+
+</details>
+
+<details>
+<summary>Run-all levels and default sweep controls</summary>
 
 - `smoke`: environment check, discovery capture, and one smoke submission.
 - `l1`: `smoke` plus short timing-overhead and 1Q timing sanity sweeps.
 - `l2`: `smoke` plus broader timing, parallelism, and readout sweeps.
 - `qec`: `l2` plus the explicit QEC memory workflow.
 
-Levels are ordered by the manifest. A requested level includes every test from
-that level and all lower levels. Additional levels can be added by extending
-the manifest; `qhw_run_all.sh` does not hardcode the level names.
+Levels are ordered by `config/qhw_tests.yaml`. A requested level includes every
+test from that level and all lower levels.
 
-The `l1` timing sweeps are kept intentionally small so that `run_all` remains
-safe for routine validation. The `l2` defaults are broader, but still tunable
-through the same environment variables. The timing-overhead settings can be
-changed with:
+Common overrides:
 
 ```bash
+export QHW_RUN_ALL_LEVEL=l1
 export QHW_RUN_ALL_OVERHEAD_SHOTS_SWEEP=1,10,100
-export QHW_RUN_ALL_OVERHEAD_BATCH_SWEEP=1,2
-export QHW_RUN_ALL_OVERHEAD_BATCH_SHOTS=100
-export QHW_RUN_ALL_OVERHEAD_WIDTHS=1
-export QHW_RUN_ALL_OVERHEAD_REPETITIONS=1
-```
-
-The default 1Q timing settings can be changed with:
-
-```bash
 export QHW_RUN_ALL_1Q_QUBITS=QB1
 export QHW_RUN_ALL_1Q_GATES=rx
 export QHW_RUN_ALL_1Q_DEPTHS=1,2
@@ -151,7 +171,7 @@ export QHW_RUN_ALL_1Q_SHOTS=100
 export QHW_RUN_ALL_1Q_REPETITIONS=1
 ```
 
-The `l2` built-in defaults are:
+Selected `l2` defaults:
 
 ```bash
 QHW_RUN_ALL_OVERHEAD_SHOTS_SWEEP=1,10,100,1000
@@ -179,7 +199,7 @@ QHW_RUN_ALL_CROSSTALK_MAX_PAIRS=2
 QHW_RUN_ALL_CROSSTALK_GATE_DEPTHS=0,8
 ```
 
-The `qec` level adds the following defaults:
+`qec` adds:
 
 ```bash
 QHW_RUN_ALL_QEC_DISTANCE=3
@@ -189,33 +209,10 @@ QHW_RUN_ALL_QEC_SHOTS=1000
 QHW_RUN_ALL_QEC_REPETITIONS=1
 ```
 
-Larger timing campaigns should still be run explicitly with the desired shot
-sweep, batch sweep, depth sweep, qubit list, and repetition count.
+</details>
 
-The suite membership and default per-level arguments live in:
-
-```text
-config/qhw_tests.yaml
-```
-
-Each test entry declares a test name, the minimum level that includes it, the
-Python workflow path, and optional per-level arguments. Argument entries can
-reference environment-variable overrides, which lets the manifest provide
-safe defaults without removing user control. New workflows should be added
-there instead of adding test-specific logic to `qhw_run_all.sh`.
-
-Output is written under:
-
-```text
-data/<YYYYMMDD>/<script-name>/<HHMMSS>/
-```
-
-Each workflow writes its terminal summary to the run's `results/` directory.
-With `--json`, the summary is stored in `results/stdout.json`. Without
-`--json`, the text summary is stored in `results/stdout.txt`. The terminal only
-prints the path to that saved output file.
-
-The `data/` directory is intentionally ignored by git.
+<details>
+<summary>Test suite design</summary>
 
 ## Test Suite Design
 
@@ -224,11 +221,10 @@ The suite is split into three layers:
 - Shell wrappers: `qhw_*.sh` files provide the user-facing commands.
 - Python workflows: `scripts/*.py` files define each characterization test.
 - Backend wrapper: `scripts/qhw_util/backend.py` provides one script-facing
-  execution path and hides whether the selected Qiskit backend is QFw or direct
-  IQM.
+  execution path across QFw and direct provider profiles.
 
 The goal is for each Python workflow to describe the test intent without
-duplicating QFw startup code, IQM client setup, result-directory handling, or
+duplicating backend startup code, provider setup, result-directory handling, or
 timing parsing. New tests should normally add one shell wrapper and one Python
 workflow, then use the shared helpers under `scripts/qhw_util/`.
 
@@ -245,11 +241,11 @@ flowchart TD
     direct_python --> selector["get_backend<br/>BackendWrapper"]
     qfw_python --> selector
     selector --> qiskit_flow["common Qiskit flow<br/>backend.run then job.result"]
-    qiskit_flow --> direct_backend["direct IQM profile<br/>IQM Qiskit provider"]
+    qiskit_flow --> direct_backend["direct provider profile<br/>BackendV2"]
     qiskit_flow --> qfw_backend["QFw profile<br/>QFwBackend"]
-    direct_backend --> iqm_client["iqm-client"]
-    qfw_backend --> qpm["api_qpm<br/>IQM QPM service"]
-    iqm_client --> machine["IQM machine"]
+    direct_backend --> provider_client["provider client"]
+    qfw_backend --> qpm["api_qpm<br/>QPM service"]
+    provider_client --> machine["quantum hardware"]
     qpm --> machine
     direct_python --> output["data/date/script/run-id"]
     qfw_python --> output
@@ -295,18 +291,18 @@ The default is `auto`. Backend selection is implemented in
 
 - `auto` uses QFw when an activated QFw environment is visible and the DEFw/QPM
   Python modules can be imported.
-- `auto` falls back to direct `iqm-client` access when QFw is not available.
+- `auto` falls back to the configured direct provider when QFw is not
+  available.
 - `qfw` requires QFw. If QFw is not activated, the workflow fails early.
 - `direct` always uses direct `iqm-client` access and never starts QFw.
 
 This means the same Python workflow can be used in three situations:
 
-- QFw production path: QFw is activated and the IQM QPM service owns access to
-  the device.
-- Standalone characterization path: QFw is absent and the script talks directly
-  to IQM.
-- Debug path: the user forces either backend to compare QFw behavior against
-  direct IQM behavior.
+- QFw path: QFw is activated and the selected QPM service owns access to the
+  device.
+- Direct path: the script talks to the configured provider profile.
+- Debug path: the user forces either backend to compare service behavior
+  against direct provider behavior.
 
 ### Backend Interface
 
@@ -395,20 +391,19 @@ record["result"]["qhw_result"]  # normalized qhw-result-v1
 record["_raw_provider"]         # raw provider payload for direct mode
 ```
 
-Direct IQM mode assumes the provider returns native or Qiskit-native IQM data.
-The wrapper therefore calls `qhw-iqm` to normalize that raw payload into
+Direct provider mode assumes the provider returns native or Qiskit-native
+payloads. Provider-specific normalizers convert that raw payload into
 `qhw-result-v1`.
 
-QFw mode assumes normalization already happened in the QFw IQM service. The
-wrapper extracts `qhw_result` from the Qiskit experiment
-metadata returned by `QFwBackend`. If QFw metadata does not include a
-normalized result, the workflow fails because that means the service contract
-was not met.
+QFw mode assumes normalization already happened in the selected QPM service.
+The wrapper extracts `qhw_result` from the Qiskit experiment metadata returned
+by `QFwBackend`. If QFw metadata does not include a normalized result, the
+workflow fails because that means the service contract was not met.
 
-### Direct Backend Structure
+### Direct Provider Structure
 
 `DirectIQMBackend` lives in `scripts/qhw_util/iqm/backend.py`. It is the
-standalone implementation used when QFw is not involved.
+current direct provider implementation.
 
 It reads:
 
@@ -423,37 +418,36 @@ raw data into JSON-friendly structures. For Qiskit-authored circuits, it
 creates an IQM Qiskit backend and lets the common `BackendWrapper` execute the
 run.
 
-The direct backend is useful for early machine acceptance, service isolation,
-and debugging. It should remain thin enough that it does not become a second
-QFw implementation.
+The direct provider path is useful for early machine acceptance, service
+isolation, and debugging.
 
 ### QFw Backend Structure
 
 `QFwBackend` lives in `scripts/qhw_util/qfw/backend.py`. It adapts the
 same workflow API to QFw.
 
-When a workflow first needs the backend, it reserves an IQM QPM service through
+When a workflow first needs the backend, it reserves a QPM service through
 `api_qpm` and DEFw:
 
 ```text
-application -> api_qpm -> resource manager -> IQM QPM service
+application -> api_qpm -> resource manager -> QPM service
 ```
 
 Metadata calls and `sync_run` calls are forwarded to that service. Qiskit
-workflows create a QFw Qiskit backend with IQM backend type and
-superconducting capability, then the common `BackendWrapper` executes the
+workflows create a QFw Qiskit backend with the requested backend type and
+capabilities, then the common `BackendWrapper` executes the
 same `backend.run(...).result()` flow used by direct mode. The QFw backend is
-responsible for routing the circuit request to the selected IQM QPM service.
+responsible for routing the circuit request to the selected QPM service.
 
-The QFw backend is the path that exercises the production integration:
+The QFw backend exercises the service integration:
 
 ```text
 shell wrapper
   -> qfw_setup.sh with config/qhw_services.yaml
   -> qfw_srun.sh <Python workflow>
   -> QFwBackend
-  -> IQM QPM service
-  -> IQM machine
+  -> QPM service
+  -> quantum hardware
 ```
 
 ### Workflow Categories
@@ -494,7 +488,7 @@ circuit and calls the same wrapper API.
 ### Shared Output And Timing
 
 `scripts/qhw_util/output.py` owns the output tree and JSON serialization.
-Direct IQM circuit executions write two primary per-case artifacts: the
+Direct provider circuit executions write two primary per-case artifacts: the
 provider-native payload as `*.raw.json` and the provider-neutral
 `qhw-result-v1` payload as `*.qhw.json`. The scripts use the normalized qhw
 payload for timing analysis so the output does not depend on a private
@@ -518,6 +512,11 @@ write summary and analysis files
 finish backend cleanly
 ```
 
+</details>
+
+<details>
+<summary>Script reference</summary>
+
 ## Script Reference
 
 The top-level `qhw_*.sh` files are the user-facing workflow entry points.
@@ -538,8 +537,8 @@ data, active qubits, the selected calibration set, and a compact summary for
 quick terminal inspection.
 
 Use this script before running characterization jobs. A successful run shows
-that the local test environment can reach the IQM backend and that the backend
-can return basic machine metadata. It does not submit a quantum job.
+that the local test environment can reach the selected backend and that the
+backend can return basic machine metadata. It does not submit a quantum job.
 
 Typical use:
 
@@ -794,7 +793,7 @@ Common run patterns:
     --shots 100 \
     --json
 
-# Force direct IQM backend instead of auto/QFw selection.
+# Force direct provider backend instead of auto/QFw selection.
 ./qhw_timing_2q.sh \
     --backend direct \
     --provider iqm \
@@ -864,7 +863,7 @@ Common run patterns:
     --shots 100 \
     --json
 
-# Broader direct-IQM run across all active qubits.
+# Broader direct provider run across all active qubits.
 ./qhw_parallel_1q.sh \
     --backend direct \
     --qubits all \
@@ -919,7 +918,7 @@ Common run patterns:
     --shots 100 \
     --json
 
-# Broader direct-IQM run including max-size matchings.
+# Broader direct provider run including max-size matchings.
 ./qhw_parallel_2q.sh \
     --backend direct \
     --gates auto \
@@ -976,7 +975,7 @@ Common run patterns:
     --shots 1000 \
     --json
 
-# Direct IQM readout characterization.
+# Direct provider readout characterization.
 ./qhw_readout.sh \
     --backend direct \
     --qubits all \
@@ -1023,7 +1022,7 @@ Common run patterns:
     --shots 1000 \
     --json
 
-# Direct IQM T1-only run.
+# Direct provider T1-only run.
 ./qhw_coherence.sh \
     --backend direct \
     --qubits QB1 \
@@ -1067,7 +1066,7 @@ Common run patterns:
     --shots 1000 \
     --json
 
-# Direct IQM run.
+# Direct provider run.
 ./qhw_rb_1q.sh \
     --backend direct \
     --qubits QB1 \
@@ -1302,6 +1301,11 @@ Common run patterns:
     --json
 ```
 
+</details>
+
+<details>
+<summary>Implementation and execution details</summary>
+
 ## Helper Modules
 
 The `scripts/qhw_util/` package contains shared implementation code used
@@ -1419,3 +1423,5 @@ if __name__ == "__main__":
 
 Characterization workflows should prefer Qiskit-authored circuits so direct
 and QFw runs exercise the same BackendV2 execution path.
+
+</details>
