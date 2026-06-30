@@ -23,6 +23,7 @@ Run individual workflows with `--backend direct`:
 ./qhw_env_check.sh --backend direct --json
 ./qhw_discover.sh --backend direct --json
 ./qhw_submit_smoke.sh --backend direct --shots 100 --json
+./qhw_run_qasm.sh ./circuit.qasm3 --backend direct --shots 100 --json
 ./qhw_timing_overhead.sh --backend direct --shots-sweep 1,10,100 --json
 ./qhw_timing_1q.sh --backend direct --qubits QB1 --gates rx --json
 ./qhw_timing_2q.sh --backend direct --max-connected-pairs 4 --json
@@ -53,6 +54,7 @@ Run individual workflows with `--backend qfw`:
 ./qhw_env_check.sh --backend qfw --json
 ./qhw_discover.sh --backend qfw --json
 ./qhw_submit_smoke.sh --backend qfw --shots 100 --json
+./qhw_run_qasm.sh ./circuit.qasm3 --backend qfw --shots 100 --json
 ./qhw_timing_overhead.sh --backend qfw --shots-sweep 1,10,100 --json
 ./qhw_timing_1q.sh --backend qfw --qubits QB1 --gates rx --json
 ./qhw_timing_2q.sh --backend qfw --non-connected none --depths 1,2 --json
@@ -65,6 +67,16 @@ Run individual workflows with `--backend qfw`:
 ./qhw_depth_limits.sh --backend qfw --widths 1,2 --depths 1,2 --json
 ./qhw_crosstalk.sh --backend qfw --max-pairs 1 --json
 ./qhw_qec_memory.sh --backend qfw --distance 3 --rounds 1 --basis z --json
+```
+
+Imported QASM circuits are transpiled for the selected backend by default when
+they are submitted to hardware. For an already-native circuit, `--no-transpile`
+submits the imported circuit as-is. In that mode, logical QASM qubits can be
+bound to physical backend qubits with a comma-separated list:
+
+```bash
+./qhw_run_qasm.sh ./circuit.qasm3 --backend direct \
+  --no-transpile --qubits QB1,QB2,QB3 --shots 100 --json
 ```
 
 ## Run The Suite
